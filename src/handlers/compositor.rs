@@ -2,6 +2,7 @@ use crate::state::ClientState;
 use crate::PocoWM;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::delegate_compositor;
+use smithay::desktop::Window;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Client;
@@ -30,13 +31,10 @@ impl CompositorHandler for PocoWM {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            self.space
-                .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == &root)
-                .map(|w| w.on_commit());
+            self.get_window(&root).map(Window::on_commit);
         }
-        super::xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
-        crate::grabs::resize_grab::handle_commit(&mut self.space, surface);
+        super::xdg_shell::handle_commit(self, surface);
+        crate::grabs::resize_grab::handle_commit(self, surface);
     }
 }
 delegate_compositor!(PocoWM);

@@ -8,6 +8,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
@@ -128,6 +129,14 @@ impl PocoWM {
                     .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
                     .map(|(s, p)| (s, (p + location).to_f64()))
             })
+    }
+
+    pub(crate) fn get_window(&self, wl_surface: &WlSurface) -> Option<&Window> {
+        self.space.elements().find(|window| {
+            window
+                .wl_surface()
+                .is_some_and(|s| s.as_ref() == wl_surface)
+        })
     }
 }
 

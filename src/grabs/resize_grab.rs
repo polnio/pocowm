@@ -1,6 +1,6 @@
 use crate::PocoWM;
-use bitflags::{bitflags, Flags};
-use smithay::desktop::{Space, Window};
+use bitflags::bitflags;
+use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
     GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -11,6 +11,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::seat::WaylandFocus as _;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 use std::cell::RefCell;
 use std::num::NonZeroI32;
@@ -114,10 +115,10 @@ impl PointerGrab<PocoWM> for ResizeGrab {
         if self.edges.intersects(ResizeEdge::TOP | ResizeEdge::BOTTOM) {
             new_window_height = (self.initial_rect.size.h as f64 + delta.y) as i32;
         }
-        let Some(wl_surface) = self.window.toplevel().map(|t| t.wl_surface()) else {
+        let Some(wl_surface) = self.window.wl_surface() else {
             return;
         };
-        let (min_size, max_size) = with_states(wl_surface, |states| {
+        let (min_size, max_size) = with_states(&wl_surface, |states| {
             let guard = &mut states.cached_state.get::<SurfaceCachedState>();
             let data = guard.current();
             (data.min_size, data.max_size)
@@ -275,12 +276,10 @@ impl PointerGrab<PocoWM> for ResizeGrab {
 }
 
 /// Should be called on `WlSurface::commit`
-pub(crate) fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> Option<()> {
-    let window = space
-        .elements()
-        .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))?;
+pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<()> {
+    let window = state.get_window(surface)?;
 
-    let mut window_loc = space.element_location(window)?;
+    let mut window_loc = state.space.element_location(window)?;
     let geometry = window.geometry();
 
     let new_loc: Point<Option<i32>, Logical> = ResizeState::with(surface, |state| {
@@ -309,7 +308,7 @@ pub(crate) fn handle_commit(space: &mut Space<Window>, surface: &WlSurface) -> O
     }
 
     if new_loc.x.is_some() || new_loc.y.is_some() {
-        space.map_element(window.clone(), window_loc, false);
+        state.space.map_element(window.clone(), window_loc, false);
     }
 
     Some(())

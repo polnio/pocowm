@@ -1,21 +1,63 @@
 use crate::grabs::{MoveGrab, ResizeGrab, ResizeState};
 use crate::PocoWM;
 use smithay::delegate_xdg_shell;
-use smithay::desktop::{
-    find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Space, Window,
-};
+use smithay::desktop::{find_popup_root_surface, get_popup_toplevel_coords, PopupKind, Window};
 use smithay::input::pointer::{Focus, GrabStartData};
 use smithay::input::Seat;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
-use smithay::utils::{Rectangle, Serial};
+use smithay::utils::{Logical, Rectangle, Serial};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
     XdgToplevelSurfaceData,
 };
+
+impl PocoWM {
+    fn tile_windows(&mut self) -> Option<()> {
+        let output = self.space.outputs().next()?;
+        let output_geometry = self.space.output_geometry(output)?;
+        let elements_count = self.space.elements().count();
+
+        self.space
+            .elements()
+            .enumerate()
+            .map(|(i, window)| {
+                let mut x = 0;
+                let mut y = 0;
+                let mut width = output_geometry.size.w;
+                let mut height = output_geometry.size.h;
+                if elements_count > 1 {
+                    width /= 2;
+                }
+                if i > 0 {
+                    height /= elements_count as i32 - 1;
+                    x += width;
+                    y += height * (i as i32 - 1);
+                }
+
+                (
+                    window.clone(),
+                    Rectangle::<i32, Logical>::from_loc_and_size((x, y), (width, height)),
+                )
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .try_for_each(|(window, rect)| {
+                window.toplevel()?.with_pending_state(|state| {
+                    state.size = Some(rect.size);
+                });
+                window.toplevel()?.send_configure();
+                self.space.map_element(window.clone(), rect.loc, false);
+
+                Some(())
+            });
+
+        Some(())
+    }
+}
 
 impl XdgShellHandler for PocoWM {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
@@ -24,7 +66,17 @@ impl XdgShellHandler for PocoWM {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::new_wayland_window(surface);
-        self.space.map_element(window, (0, 0), false);
+        self.space.map_element(window.clone(), (0, 0), false);
+        self.focus_window(Some(&window));
+        self.tile_windows();
+    }
+
+    fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        let Some(window) = self.get_window(surface.wl_surface()).cloned() else {
+            return;
+        };
+        self.space.unmap_elem(&window);
+        self.tile_windows();
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -62,11 +114,7 @@ impl XdgShellHandler for PocoWM {
             let Some(pointer) = seat.get_pointer() else {
                 return;
             };
-            let Some(window) = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == wl_surface))
-            else {
+            let Some(window) = self.get_window(wl_surface) else {
                 return;
             };
             let Some(initial_window_location) = self.space.element_location(window) else {
@@ -100,11 +148,7 @@ impl XdgShellHandler for PocoWM {
         let Some(pointer) = seat.get_pointer() else {
             return;
         };
-        let Some(window) = self
-            .space
-            .elements()
-            .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == wl_surface))
-        else {
+        let Some(window) = self.get_window(wl_surface) else {
             return;
         };
         let Some(initial_window_location) = self.space.element_location(window) else {
@@ -160,11 +204,7 @@ impl PocoWM {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(surface.clone())) else {
             return;
         };
-        let Some(window) = self
-            .space
-            .elements()
-            .find(|w| w.toplevel().map_or(false, |t| t.wl_surface() == &root))
-        else {
+        let Some(window) = self.get_window(&root) else {
             return;
         };
 
@@ -187,32 +227,25 @@ impl PocoWM {
     }
 }
 
-pub(super) fn handle_commit(popups: &mut PopupManager, space: &Space<Window>, surface: &WlSurface) {
-    space
-        .elements()
-        .find(|window| {
-            window
-                .toplevel()
-                .map_or(false, |t| t.wl_surface() == surface)
+pub(super) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) {
+    state.get_window(surface).map(|window| {
+        with_states(surface, |states| {
+            states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .and_then(|data| data.lock().ok())
+                .map_or(false, |data| !data.initial_configure_sent)
         })
-        .map(|window| {
-            with_states(surface, |states| {
-                states
-                    .data_map
-                    .get::<XdgToplevelSurfaceData>()
-                    .and_then(|data| data.lock().ok())
-                    .map_or(false, |data| !data.initial_configure_sent)
-            })
-            .then(|| {
-                window.toplevel().map(|t| t.send_configure());
-            });
+        .then(|| {
+            window.toplevel().map(|t| t.send_configure());
         });
+    });
 
-    popups.commit(surface);
-    popups.find_popup(surface).map(|popup| match popup {
+    state.popups.commit(surface);
+    state.popups.find_popup(surface).map(|popup| match popup {
         PopupKind::Xdg(xdg) => {
             if !xdg.is_initial_configure_sent() {
-                xdg.send_configure().unwrap();
+                let _ = xdg.send_configure();
             }
         }
         PopupKind::InputMethod(_) => {}
