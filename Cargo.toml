@@ -1,0 +1,13 @@
+[package]
+name = "pocowm"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.90"
+bitflags = "2.6.0"
+# smithay = "0.3.0"
+smithay = { git = "https://github.com/smithay/smithay.git", rev = "05c49f7a193bc89fba12a6484dbac895d5c9f853", default-features = false, features = ["backend_winit", "wayland_frontend", "desktop"] }
+tracing-subscriber = "0.3.18"

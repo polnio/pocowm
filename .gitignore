@@ -1,0 +1,6 @@
+# Cargo
+/target
+
+# Nix
+.direnv
+result
