@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::layout::{Layout, LayoutType};
 use crate::PocoWM;
 use bitflags::bitflags;
 use smithay::backend::input::{
@@ -54,7 +55,7 @@ impl PocoWM {
                         event_state,
                         serial,
                         time,
-                        |_state, modifiers, key| {
+                        |state, modifiers, key| {
                             if event_state != KeyState::Pressed {
                                 return FilterResult::Forward;
                             }
@@ -62,25 +63,49 @@ impl PocoWM {
                             if !modifiers.contains(KeyModifiers::ALT) {
                                 return FilterResult::Forward;
                             }
-                            if !key.raw_syms().contains(&Keysym::Return) {
-                                return FilterResult::Forward;
+                            if key.raw_syms().contains(&Keysym::Return) {
+                                let _ = std::process::Command::new("kitty")
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::null())
+                                    .spawn();
+                                return FilterResult::Intercept(());
                             }
-                            let _ = std::process::Command::new("kitty").spawn();
-                            FilterResult::Intercept(())
+                            if key.raw_syms().contains(&Keysym::j) {
+                                let focused_window = keyboard
+                                    .current_focus()
+                                    .and_then(|s| state.layout.get_window(&s))
+                                    .cloned();
+                                if let Some(focused_window) = focused_window {
+                                    let mut layout = Layout::new(LayoutType::Vertical);
+                                    let positions =
+                                        state.layout.get_window_positions(&focused_window);
+                                    state.layout.remove_window(&focused_window);
+                                    layout.add_window(focused_window, None);
+                                    state.layout.add_sublayout(layout, positions.as_deref());
+                                } else if state.layout.elements.is_empty() {
+                                    state.layout.layout_type = LayoutType::Vertical;
+                                } else {
+                                    let mut layout = Layout::new(LayoutType::Vertical);
+                                    std::mem::swap(&mut state.layout, &mut layout);
+                                    state.layout.add_sublayout(layout, None);
+                                }
+                                return FilterResult::Intercept(());
+                            }
+                            FilterResult::Forward
                         },
                     )
                 });
             }
             InputEvent::PointerMotion { .. } => {}
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.space.outputs().next()?;
-                let output_geometry = self.space.output_geometry(output)?;
+                let output = self.renderer.outputs().next()?;
+                let output_geometry = self.renderer.output_geometry(output)?;
                 let pos =
                     event.position_transformed(output_geometry.size) + output_geometry.loc.to_f64();
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.seat.get_pointer()?;
 
-                let under = self.surface_under(pos);
+                let under = self.renderer.surface_under(pos);
                 pointer.motion(
                     self,
                     under,
@@ -97,7 +122,7 @@ impl PocoWM {
                 let button_state = event.state();
                 match button_state {
                     ButtonState::Pressed if pointer.is_grabbed() => {
-                        self.space.elements().for_each(|window| {
+                        self.layout.iter_windows().for_each(|window| {
                             window.set_activated(false);
                             window.toplevel().map(|t| t.send_pending_configure());
                         });
@@ -105,10 +130,10 @@ impl PocoWM {
                     }
                     ButtonState::Pressed => {
                         let (window, _location) =
-                            self.space.element_under(pointer.current_location())?;
+                            self.renderer.element_under(pointer.current_location())?;
                         let window = window.clone();
                         self.focus_window(Some(&window));
-                        self.space.elements().for_each(|window| {
+                        self.renderer.elements().for_each(|window| {
                             window.toplevel().map(|t| t.send_pending_configure());
                         });
                     }
@@ -134,7 +159,7 @@ impl PocoWM {
 
     pub fn focus_window(&mut self, window: Option<&Window>) {
         if let Some(window) = window {
-            self.space.raise_element(&window, true);
+            self.renderer.raise_element(&window, true);
         }
         self.seat.get_keyboard().map(|keyboard| {
             let serial = SERIAL_COUNTER.next_serial();

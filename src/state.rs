@@ -1,14 +1,13 @@
+use crate::layout::Layout;
+use crate::renderer::Renderer;
 use anyhow::{Context as _, Result};
-use smithay::desktop::{PopupManager, Space, Window, WindowSurfaceType};
+use smithay::desktop::PopupManager;
 use smithay::input::{Seat, SeatState};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{self, EventLoop, LoopSignal};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Logical, Point};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
-use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
@@ -25,7 +24,8 @@ pub struct PocoWM {
     pub(crate) event_loop: Rc<RefCell<EventLoop<'static, Self>>>,
     pub(crate) display: DisplayHandle,
     pub(crate) seat: Seat<Self>,
-    pub(crate) space: Space<Window>,
+    pub(crate) layout: Layout,
+    pub(crate) renderer: Renderer,
     pub(crate) loop_signal: LoopSignal,
     pub(crate) socket_name: OsString,
     pub(crate) popups: PopupManager,
@@ -47,7 +47,6 @@ impl PocoWM {
         let socket = ListeningSocketSource::new_auto().context("Failed to init socket")?;
         let mut seat_state = SeatState::<Self>::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
-        let space = Space::default();
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
@@ -55,6 +54,8 @@ impl PocoWM {
 
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit");
         let socket_name = socket.socket_name().to_owned();
+        let layout = Layout::default();
+        let renderer = Renderer::default();
 
         event_loop
             .handle()
@@ -93,7 +94,8 @@ impl PocoWM {
             start_time,
             display: dh,
             seat,
-            space,
+            layout: layout.into(),
+            renderer,
             loop_signal,
             socket_name,
             popups,
@@ -116,27 +118,6 @@ impl PocoWM {
             .context("Failed to run event loop")?;
 
         Ok(())
-    }
-
-    pub(crate) fn surface_under(
-        &self,
-        pos: Point<f64, Logical>,
-    ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.space
-            .element_under(pos)
-            .and_then(|(window, location)| {
-                window
-                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, (p + location).to_f64()))
-            })
-    }
-
-    pub(crate) fn get_window(&self, wl_surface: &WlSurface) -> Option<&Window> {
-        self.space.elements().find(|window| {
-            window
-                .wl_surface()
-                .is_some_and(|s| s.as_ref() == wl_surface)
-        })
     }
 }
 

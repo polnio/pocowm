@@ -31,7 +31,7 @@ impl CompositorHandler for PocoWM {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            self.get_window(&root).map(Window::on_commit);
+            self.layout.get_window(&root).map(Window::on_commit);
         }
         super::xdg_shell::handle_commit(self, surface);
         crate::grabs::resize_grab::handle_commit(self, surface);

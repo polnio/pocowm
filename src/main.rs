@@ -2,6 +2,8 @@ mod backends;
 mod grabs;
 mod handlers;
 mod input;
+mod layout;
+mod renderer;
 mod state;
 
 use anyhow::Result;

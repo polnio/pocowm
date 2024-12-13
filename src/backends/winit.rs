@@ -37,7 +37,7 @@ impl PocoWM {
             Some((0, 0).into()),
         );
         output.set_preferred(mode);
-        self.space.map_output(&output, (0, 0));
+        self.renderer.map_output(&output, (0, 0));
 
         let mut damage_tracker = OutputDamageTracker::from_output(&output);
 
@@ -72,7 +72,7 @@ impl PocoWM {
                                 backend.renderer(),
                                 1.0,
                                 0,
-                                [&state.space],
+                                [&state.renderer.space],
                                 &[],
                                 &mut damage_tracker,
                                 [0.1, 0.1, 0.1, 1.0],
@@ -82,7 +82,7 @@ impl PocoWM {
                                 .submit(Some(&[damage]))
                                 .context("Failed to submit")?;
 
-                            state.space.elements().for_each(|window| {
+                            state.layout.iter_windows().for_each(|window| {
                                 window.send_frame(
                                     &output,
                                     state.start_time.elapsed(),
@@ -91,7 +91,7 @@ impl PocoWM {
                                 )
                             });
 
-                            state.space.refresh();
+                            state.renderer.refresh();
                             state.popups.cleanup();
                             let _ = state.display.flush_clients();
                             backend.window().request_redraw();

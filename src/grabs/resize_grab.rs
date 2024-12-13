@@ -277,9 +277,9 @@ impl PointerGrab<PocoWM> for ResizeGrab {
 
 /// Should be called on `WlSurface::commit`
 pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<()> {
-    let window = state.get_window(surface)?;
+    let window = state.layout.get_window(surface)?;
 
-    let mut window_loc = state.space.element_location(window)?;
+    let mut window_loc = state.renderer.element_location(window)?;
     let geometry = window.geometry();
 
     let new_loc: Point<Option<i32>, Logical> = ResizeState::with(surface, |state| {
@@ -308,7 +308,9 @@ pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<(
     }
 
     if new_loc.x.is_some() || new_loc.y.is_some() {
-        state.space.map_element(window.clone(), window_loc, false);
+        state
+            .renderer
+            .map_element(window.clone(), window_loc, false);
     }
 
     Some(())
