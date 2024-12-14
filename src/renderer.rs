@@ -70,6 +70,8 @@ where
     }
 } */
 
+const GAP: i32 = 20;
+
 #[derive(Debug, Default, PartialEq)]
 pub struct Renderer {
     pub space: Space<Window>,
@@ -95,26 +97,33 @@ impl Renderer {
 
     pub fn render(&mut self, layout: &Layout) -> Option<()> {
         let output = self.space.outputs().next()?;
-        let output_geometry = self.space.output_geometry(output)?;
-        self.render_rec(layout, output_geometry)
+        let mut rect = self.space.output_geometry(output)?;
+        rect.loc.x += GAP;
+        rect.loc.y += GAP;
+        rect.size.w -= GAP * 2;
+        rect.size.h -= GAP * 2;
+        self.render_rec(layout, rect)
     }
 
     fn render_rec(&mut self, layout: &Layout, rect: Rectangle<i32, Logical>) -> Option<()> {
-        let elements_count = layout.elements.len();
+        let elements_count = layout.elements.len() as i32;
         layout
             .elements
             .iter()
             .enumerate()
             .try_for_each(|(i, element)| {
+                let i = i as i32;
                 let mut rect = rect.clone();
                 match layout.layout_type {
                     LayoutType::Horizontal => {
-                        rect.size.w /= elements_count as i32;
-                        rect.loc.x += rect.size.w * (i as i32);
+                        rect.size.w = (rect.size.w - GAP * (elements_count - 1)) / elements_count;
+                        // rect.size.w = (rect.size.w + GAP) / elements_count - GAP;
+                        rect.loc.x += (rect.size.w + GAP) * i;
                     }
                     LayoutType::Vertical => {
-                        rect.size.h /= elements_count as i32;
-                        rect.loc.y += rect.size.h * (i as i32);
+                        rect.size.h = (rect.size.h - GAP * (elements_count - 1)) / elements_count;
+                        // rect.size.h = (rect.size.h + GAP) / elements_count - GAP;
+                        rect.loc.y += (rect.size.h + GAP) * i;
                     }
                     LayoutType::Tabbed => {}
                 }
