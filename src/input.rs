@@ -1,17 +1,16 @@
-use std::borrow::Cow;
-
-use crate::layout::{Layout, LayoutType};
+use crate::layout::{LayoutElement, LayoutType};
+use crate::window::Window;
 use crate::PocoWM;
 use bitflags::bitflags;
 use smithay::backend::input::{
     AbsolutePositionEvent as _, ButtonState, Event, InputBackend, InputEvent, KeyState,
     KeyboardKeyEvent as _, PointerButtonEvent as _,
 };
-use smithay::desktop::Window;
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{ButtonEvent, MotionEvent};
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::seat::WaylandFocus as _;
+use std::borrow::Cow;
 
 bitflags! {
     struct KeyModifiers: u8 {
@@ -63,32 +62,50 @@ impl PocoWM {
                             if !modifiers.contains(KeyModifiers::ALT) {
                                 return FilterResult::Forward;
                             }
-                            if key.raw_syms().contains(&Keysym::Return) {
+                            let syms = key.raw_syms();
+                            if syms.contains(&Keysym::Return) {
                                 let _ = std::process::Command::new("kitty")
                                     .stdout(std::process::Stdio::null())
                                     .stderr(std::process::Stdio::null())
                                     .spawn();
                                 return FilterResult::Intercept(());
                             }
-                            if key.raw_syms().contains(&Keysym::j) {
-                                let focused_window = keyboard
+                            if syms.contains(&Keysym::e) {
+                                keyboard
                                     .current_focus()
-                                    .and_then(|s| state.layout.get_window(&s))
-                                    .cloned();
-                                if let Some(focused_window) = focused_window {
-                                    let mut layout = Layout::new(LayoutType::Vertical);
-                                    let positions =
-                                        state.layout.get_window_positions(&focused_window);
-                                    state.layout.remove_window(&focused_window);
-                                    layout.add_window(focused_window, None);
-                                    state.layout.add_sublayout(layout, positions.as_deref());
-                                } else if state.layout.elements.is_empty() {
-                                    state.layout.layout_type = LayoutType::Vertical;
-                                } else {
-                                    let mut layout = Layout::new(LayoutType::Vertical);
-                                    std::mem::swap(&mut state.layout, &mut layout);
-                                    state.layout.add_sublayout(layout, None);
-                                }
+                                    .and_then(|s| state.layout.get_window_from_surface(&s))
+                                    .and_then(|w| w.state().is_tiled().then_some(w))
+                                    .and_then(|w| state.layout.get_window_positions(&w))
+                                    .map(|positions| {
+                                        let mut layout = &mut state.layout;
+                                        for pos in positions {
+                                            match layout.elements.get_mut(pos) {
+                                                Some(LayoutElement::SubLayout(sl)) => {
+                                                    layout = sl;
+                                                }
+                                                _ => break,
+                                            }
+                                        }
+                                        layout.layout_type = match layout.layout_type {
+                                            LayoutType::Horizontal => LayoutType::Vertical,
+                                            LayoutType::Vertical => LayoutType::Horizontal,
+                                            LayoutType::Tabbed => LayoutType::Horizontal,
+                                        };
+                                        state.renderer.render(&state.layout);
+                                    });
+                                return FilterResult::Intercept(());
+                            }
+
+                            if syms.contains(&Keysym::b) {
+                                state.switch_to_layout(LayoutType::Vertical);
+                                return FilterResult::Intercept(());
+                            }
+                            if syms.contains(&Keysym::n) {
+                                state.switch_to_layout(LayoutType::Horizontal);
+                                return FilterResult::Intercept(());
+                            }
+                            if syms.contains(&Keysym::f) {
+                                state.toggle_floating();
                                 return FilterResult::Intercept(());
                             }
                             FilterResult::Forward
@@ -105,10 +122,27 @@ impl PocoWM {
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.seat.get_pointer()?;
 
-                let under = self.renderer.surface_under(pos);
+                let pointed_window = self
+                    .renderer
+                    .element_under(pos)
+                    .map(|(w, _)| Window::from(w.clone()));
+                let focused_window = self
+                    .seat
+                    .get_keyboard()
+                    .and_then(|k| k.current_focus())
+                    .and_then(|s| self.layout.get_window_from_surface(&s))
+                    .cloned();
+                Option::zip(pointed_window, focused_window).map(
+                    |(pointed_window, focused_window)| {
+                        if pointed_window != focused_window {
+                            self.focus_window(Some(&pointed_window));
+                        }
+                    },
+                );
+
                 pointer.motion(
                     self,
-                    under,
+                    self.renderer.surface_under(pos),
                     &MotionEvent {
                         location: pos,
                         serial,
@@ -131,7 +165,7 @@ impl PocoWM {
                     ButtonState::Pressed => {
                         let (window, _location) =
                             self.renderer.element_under(pointer.current_location())?;
-                        let window = window.clone();
+                        let window = window.clone().into();
                         self.focus_window(Some(&window));
                         self.renderer.elements().for_each(|window| {
                             window.toplevel().map(|t| t.send_pending_configure());
@@ -159,13 +193,16 @@ impl PocoWM {
 
     pub fn focus_window(&mut self, window: Option<&Window>) {
         if let Some(window) = window {
-            self.renderer.raise_element(&window, true);
+            self.layout.iter_mut_windows().for_each(|w| {
+                w.set_activated(false);
+            });
+            window.set_activated(true);
         }
         self.seat.get_keyboard().map(|keyboard| {
             let serial = SERIAL_COUNTER.next_serial();
             keyboard.set_focus(
                 self,
-                window.and_then(Window::wl_surface).map(Cow::into_owned),
+                window.and_then(|w| w.wl_surface()).map(Cow::into_owned),
                 serial,
             );
         });

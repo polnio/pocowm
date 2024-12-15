@@ -5,6 +5,7 @@ mod input;
 mod layout;
 mod renderer;
 mod state;
+mod window;
 
 use anyhow::Result;
 pub use state::PocoWM;

@@ -75,7 +75,8 @@ impl PocoWM {
                                 [&state.renderer.space],
                                 &[],
                                 &mut damage_tracker,
-                                [0.1, 0.1, 0.1, 1.0],
+                                // [0.1, 0.1, 0.1, 1.0],
+                                [0.8, 0.8, 0.8, 1.0],
                             )
                             .context("Failed to render output")?;
                             backend

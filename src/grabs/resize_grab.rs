@@ -1,6 +1,6 @@
+use crate::window::Window;
 use crate::PocoWM;
 use bitflags::bitflags;
-use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
     GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -100,7 +100,7 @@ impl PointerGrab<PocoWM> for ResizeGrab {
         event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
-        let mut delta = event.location - self.start_data().location;
+        let mut delta = event.location - self.start_data.location;
         let mut new_window_width = self.initial_rect.size.w;
         let mut new_window_height = self.initial_rect.size.h;
         if self.edges.intersects(ResizeEdge::LEFT) {
@@ -166,20 +166,6 @@ impl PointerGrab<PocoWM> for ResizeGrab {
         const BTN_LEFT: u32 = 0x110;
         if !handle.current_pressed().contains(&BTN_LEFT) {
             handle.unset_grab(self, data, event.serial, event.time, true);
-            let Some(xdg) = self.window.toplevel() else {
-                return;
-            };
-            xdg.with_pending_state(|state| {
-                state.states.unset(xdg_toplevel::State::Resizing);
-                state.size = Some(self.last_window_size);
-            });
-            xdg.send_pending_configure();
-            ResizeState::with(xdg.wl_surface(), |state| {
-                *state = ResizeState::WaitingForLastCommit {
-                    edges: self.edges,
-                    initial_rect: self.initial_rect,
-                };
-            });
         }
     }
 
@@ -272,12 +258,30 @@ impl PointerGrab<PocoWM> for ResizeGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut PocoWM) {}
+    fn unset(&mut self, _data: &mut PocoWM) {
+        let Some(xdg) = self.window.toplevel() else {
+            return;
+        };
+        xdg.with_pending_state(|state| {
+            state.states.unset(xdg_toplevel::State::Resizing);
+            state.size = Some(self.last_window_size);
+        });
+        xdg.send_pending_configure();
+        ResizeState::with(xdg.wl_surface(), |state| {
+            *state = ResizeState::WaitingForLastCommit {
+                edges: self.edges,
+                initial_rect: self.initial_rect,
+            };
+        });
+    }
 }
 
 /// Should be called on `WlSurface::commit`
 pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<()> {
-    let window = state.layout.get_window(surface)?;
+    let window = state.layout.get_mut_window_from_surface(surface)?;
+    if !window.state().is_floating() {
+        return None;
+    }
 
     let mut window_loc = state.renderer.element_location(window)?;
     let geometry = window.geometry();
@@ -308,9 +312,10 @@ pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<(
     }
 
     if new_loc.x.is_some() || new_loc.y.is_some() {
+        window.set_floating_loc(window_loc);
         state
             .renderer
-            .map_element(window.clone(), window_loc, false);
+            .map_element(window.inner().clone(), window_loc, false);
     }
 
     Some(())

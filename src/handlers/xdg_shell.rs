@@ -1,7 +1,8 @@
 use crate::grabs::{MoveGrab, ResizeGrab, ResizeState};
+use crate::window::Window;
 use crate::PocoWM;
 use smithay::delegate_xdg_shell;
-use smithay::desktop::{find_popup_root_surface, get_popup_toplevel_coords, PopupKind, Window};
+use smithay::desktop::{find_popup_root_surface, get_popup_toplevel_coords, PopupKind};
 use smithay::input::pointer::{Focus, GrabStartData};
 use smithay::input::Seat;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
@@ -21,27 +22,36 @@ impl XdgShellHandler for PocoWM {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window = Window::new_wayland_window(surface);
+        let window = Window::from_surface(surface);
         let mut positions = self
             .seat
             .get_keyboard()
             .and_then(|k| k.current_focus())
-            .and_then(|s| self.layout.get_window(&s))
+            .and_then(|s| self.layout.get_window_from_surface(&s))
             .and_then(|w| self.layout.get_window_positions(w));
         if let Some(pos) = positions.as_mut() {
             pos.last_mut().map(|p| *p += 1);
         }
-        self.focus_window(Some(&window));
-        self.layout.add_window(window, positions.as_deref());
+        self.layout.add_window(window.clone(), positions.as_deref());
         self.renderer.render(&self.layout);
+        self.focus_window(Some(&window));
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        let Some(window) = self.layout.get_window(surface.wl_surface()).cloned() else {
-            return;
-        };
-        self.layout.remove_window(&window);
+        let mut positions = self
+            .layout
+            .get_window_from_surface(surface.wl_surface())
+            .and_then(|w| self.layout.get_window_positions(w));
+        self.layout.remove_window(positions.as_deref());
         self.renderer.render(&self.layout);
+        positions
+            .as_mut()
+            .and_then(|p| p.last_mut())
+            .map(|p| *p = p.saturating_sub(1));
+        positions
+            .and_then(|p| self.layout.get_window(&p))
+            .cloned()
+            .map(|w| self.focus_window(Some(&w)));
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -75,25 +85,29 @@ impl XdgShellHandler for PocoWM {
 
         let wl_surface = surface.wl_surface();
 
-        if let Some(start_data) = check_grab(&seat, &wl_surface, serial) {
-            let Some(pointer) = seat.get_pointer() else {
-                return;
-            };
-            let Some(window) = self.layout.get_window(wl_surface) else {
-                return;
-            };
-            let Some(initial_window_location) = self.renderer.element_location(window) else {
-                return;
-            };
-
-            let grab = MoveGrab {
-                start_data,
-                window: window.clone(),
-                initial_window_location,
-            };
-
-            pointer.set_grab(self, grab, serial, Focus::Clear)
+        let Some(start_data) = check_grab(&seat, &wl_surface, serial) else {
+            return;
+        };
+        let Some(pointer) = seat.get_pointer() else {
+            return;
+        };
+        let Some(window) = self.layout.get_window_from_surface(wl_surface) else {
+            return;
+        };
+        if !window.state().is_floating() {
+            return;
         }
+        let Some(initial_window_location) = self.renderer.element_location(window) else {
+            return;
+        };
+
+        let grab = MoveGrab {
+            start_data,
+            window: window.clone(),
+            initial_window_location,
+        };
+
+        pointer.set_grab(self, grab, serial, Focus::Clear)
     }
 
     fn resize_request(
@@ -107,13 +121,16 @@ impl XdgShellHandler for PocoWM {
             return;
         };
         let wl_surface = surface.wl_surface();
-        let Some(start_data) = check_grab(&seat, &wl_surface, serial) else {
-            return;
-        };
         let Some(pointer) = seat.get_pointer() else {
             return;
         };
-        let Some(window) = self.layout.get_window(wl_surface) else {
+        let Some(window) = self.layout.get_window_from_surface(wl_surface) else {
+            return;
+        };
+        if !window.state().is_floating() {
+            return;
+        }
+        let Some(start_data) = check_grab(&seat, wl_surface, serial) else {
             return;
         };
         let Some(initial_window_location) = self.renderer.element_location(window) else {
@@ -169,7 +186,7 @@ impl PocoWM {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(surface.clone())) else {
             return;
         };
-        let Some(window) = self.layout.get_window(&root) else {
+        let Some(window) = self.layout.get_window_from_surface(&root) else {
             return;
         };
 
@@ -193,7 +210,7 @@ impl PocoWM {
 }
 
 pub(super) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) {
-    state.layout.get_window(surface).map(|window| {
+    state.layout.get_window_from_surface(surface).map(|window| {
         with_states(surface, |states| {
             states
                 .data_map

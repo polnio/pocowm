@@ -1,5 +1,5 @@
+use crate::window::Window;
 use crate::PocoWM;
-use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
     GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -25,9 +25,10 @@ impl PointerGrab<PocoWM> for MoveGrab {
     ) {
         handle.motion(data, None, event);
         let delta = event.location - self.start_data().location;
-        let new_location = self.initial_window_location.to_f64() + delta;
+        let new_location = (self.initial_window_location.to_f64() + delta).to_i32_round();
+        self.window.set_floating_loc(new_location);
         data.renderer
-            .map_element(self.window.clone(), new_location.to_i32_round(), true);
+            .map_element(self.window.inner().clone(), new_location, true);
     }
 
     fn relative_motion(

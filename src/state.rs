@@ -25,6 +25,8 @@ pub struct PocoWM {
     pub(crate) display: DisplayHandle,
     pub(crate) seat: Seat<Self>,
     pub(crate) layout: Layout,
+    // pub(crate) floating_windows: Vec<Window>,
+    // pub(crate) layout_manager: LayoutManager,
     pub(crate) renderer: Renderer,
     pub(crate) loop_signal: LoopSignal,
     pub(crate) socket_name: OsString,
@@ -55,6 +57,8 @@ impl PocoWM {
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit");
         let socket_name = socket.socket_name().to_owned();
         let layout = Layout::default();
+        // let floating_windows = Vec::new();
+        // let layout_manager = LayoutManager::new();
         let renderer = Renderer::default();
 
         event_loop
@@ -94,7 +98,9 @@ impl PocoWM {
             start_time,
             display: dh,
             seat,
-            layout: layout.into(),
+            layout,
+            // floating_windows,
+            // layout_manager,
             renderer,
             loop_signal,
             socket_name,
