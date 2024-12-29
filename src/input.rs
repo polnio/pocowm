@@ -9,8 +9,6 @@ use smithay::backend::input::{
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{ButtonEvent, MotionEvent};
 use smithay::utils::SERIAL_COUNTER;
-use smithay::wayland::seat::WaylandFocus as _;
-use std::borrow::Cow;
 
 bitflags! {
     struct KeyModifiers: u8 {
@@ -73,8 +71,7 @@ impl PocoWM {
                             if syms.contains(&Keysym::e) {
                                 keyboard
                                     .current_focus()
-                                    .and_then(|s| state.layout.get_window_from_surface(&s))
-                                    .and_then(|w| w.state().is_tiled().then_some(w))
+                                    .and_then(|w| w.inner().state().is_tiled().then_some(w))
                                     .and_then(|w| state.layout.get_window_positions(&w))
                                     .map(|positions| {
                                         let mut layout = &mut state.layout;
@@ -122,16 +119,8 @@ impl PocoWM {
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.seat.get_pointer()?;
 
-                let pointed_window = self
-                    .renderer
-                    .element_under(pos)
-                    .map(|(w, _)| Window::from(w.clone()));
-                let focused_window = self
-                    .seat
-                    .get_keyboard()
-                    .and_then(|k| k.current_focus())
-                    .and_then(|s| self.layout.get_window_from_surface(&s))
-                    .cloned();
+                let pointed_window = self.renderer.element_under(pos).map(|(w, _)| w.clone());
+                let focused_window = self.seat.get_keyboard().and_then(|k| k.current_focus());
                 Option::zip(pointed_window, focused_window).map(
                     |(pointed_window, focused_window)| {
                         if pointed_window != focused_window {
@@ -142,7 +131,9 @@ impl PocoWM {
 
                 pointer.motion(
                     self,
-                    self.renderer.surface_under(pos),
+                    self.renderer
+                        .element_under(pos)
+                        .map(|(w, p)| (w.clone(), p.to_f64())),
                     &MotionEvent {
                         location: pos,
                         serial,
@@ -165,7 +156,7 @@ impl PocoWM {
                     ButtonState::Pressed => {
                         let (window, _location) =
                             self.renderer.element_under(pointer.current_location())?;
-                        let window = window.clone().into();
+                        let window = window.inner().clone().into();
                         self.focus_window(Some(&window));
                         self.renderer.elements().for_each(|window| {
                             window.toplevel().map(|t| t.send_pending_configure());
@@ -184,6 +175,7 @@ impl PocoWM {
                         time: event.time_msec(),
                     },
                 );
+                pointer.frame(self);
             }
             _ => {}
         }
@@ -200,11 +192,7 @@ impl PocoWM {
         }
         self.seat.get_keyboard().map(|keyboard| {
             let serial = SERIAL_COUNTER.next_serial();
-            keyboard.set_focus(
-                self,
-                window.and_then(|w| w.wl_surface()).map(Cow::into_owned),
-                serial,
-            );
+            keyboard.set_focus(self, window.map(|w| w.clone().into()), serial);
         });
     }
 }

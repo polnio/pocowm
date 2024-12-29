@@ -31,14 +31,14 @@ impl Layout {
             ..Default::default()
         }
     }
-    pub fn iter_windows<'a>(&'a self) -> Box<dyn Iterator<Item = &Window> + 'a> {
+    pub fn iter_windows<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Window> + 'a> {
         let iter = self.elements.iter().flat_map(|element| match element {
             LayoutElement::Window(window) => Box::new(std::iter::once(window)),
             LayoutElement::SubLayout(layout) => layout.iter_windows(),
         });
         Box::new(iter)
     }
-    pub fn iter_mut_windows<'a>(&'a mut self) -> Box<dyn Iterator<Item = &mut Window> + 'a> {
+    pub fn iter_mut_windows<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut Window> + 'a> {
         let iter = self.elements.iter_mut().flat_map(|element| match element {
             LayoutElement::Window(window) => Box::new(std::iter::once(window)),
             LayoutElement::SubLayout(layout) => layout.iter_mut_windows(),
@@ -198,8 +198,7 @@ impl PocoWM {
             .seat
             .get_keyboard()
             .and_then(|k| k.current_focus())
-            .and_then(|s| self.layout.get_window_from_surface(&s))
-            .cloned();
+            .map(|f| f.inner().clone());
         if let Some(focused_window) = focused_window {
             if focused_window.state().is_floating() {
                 return;
@@ -218,19 +217,15 @@ impl PocoWM {
         }
     }
     pub fn toggle_floating(&mut self) {
-        let focused_window = self
-            .seat
-            .get_keyboard()
-            .and_then(|k| k.current_focus())
-            .and_then(|s| self.layout.get_mut_window_from_surface(&s));
+        let focused_window = self.seat.get_keyboard().and_then(|k| k.current_focus());
         let Some(focused_window) = focused_window else {
             return;
         };
-        // self.layout.toggle_floating(&focused_window);
-        focused_window.set_state(match focused_window.state() {
+        let state = focused_window.state();
+        focused_window.set_state(match state {
             WindowState::Floating => WindowState::Tiled,
             WindowState::Tiled => WindowState::Floating,
-            state => state.clone(),
+            state => state,
         });
         self.renderer.render(&self.layout);
     }

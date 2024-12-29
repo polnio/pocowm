@@ -4,14 +4,16 @@ use anyhow::{Context as _, Result};
 use smithay::desktop::PopupManager;
 use smithay::input::{Seat, SeatState};
 use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{self, EventLoop, LoopSignal};
+use smithay::reexports::calloop::{self, EventLoop, LoopHandle, LoopSignal};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::xdg_foreign::XdgForeignState;
 use std::cell::RefCell;
 use std::ffi::OsString;
 use std::rc::Rc;
@@ -22,6 +24,7 @@ use std::time::Instant;
 pub struct PocoWM {
     pub(crate) start_time: Instant,
     pub(crate) event_loop: Rc<RefCell<EventLoop<'static, Self>>>,
+    pub(crate) loop_handle: LoopHandle<'static, Self>,
     pub(crate) display: DisplayHandle,
     pub(crate) seat: Seat<Self>,
     pub(crate) layout: Layout,
@@ -36,6 +39,8 @@ pub struct PocoWM {
     pub(crate) data_device_state: DataDeviceState,
     pub(crate) compositor_state: CompositorState,
     pub(crate) xdg_shell_state: XdgShellState,
+    pub(crate) xdg_decoration_state: XdgDecorationState,
+    pub(crate) xdg_foreign_state: XdgForeignState,
     pub(crate) shm_state: ShmState,
 }
 
@@ -46,11 +51,14 @@ impl PocoWM {
         let dh = display.handle();
         let event_loop = EventLoop::<Self>::try_new().context("Failed to init event loop")?;
         let loop_signal = event_loop.get_signal();
+        let loop_handle = event_loop.handle();
         let socket = ListeningSocketSource::new_auto().context("Failed to init socket")?;
         let mut seat_state = SeatState::<Self>::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
+        let xdg_foreign_state = XdgForeignState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let popups = PopupManager::default();
 
@@ -103,6 +111,7 @@ impl PocoWM {
             // layout_manager,
             renderer,
             loop_signal,
+            loop_handle,
             socket_name,
             popups,
 
@@ -111,6 +120,8 @@ impl PocoWM {
             seat_state,
             shm_state,
             xdg_shell_state,
+            xdg_decoration_state,
+            xdg_foreign_state,
         })
     }
 

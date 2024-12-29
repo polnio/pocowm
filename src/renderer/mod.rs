@@ -1,10 +1,16 @@
+pub mod decorations;
+pub mod window;
+
+pub use decorations::DecorationsElements;
+pub use window::WindowElements;
+
 // https://danyspin97.org/talks/writing-a-wayland-wallpaper-daemon-in-rust/#47
 use crate::layout::{Layout, LayoutElement, LayoutType};
 use crate::window::{Window, WindowState};
 // use smithay::backend::renderer::element::{AsRenderElements, Element, Id, RenderElement};
 // use smithay::backend::renderer::utils::CommitCounter;
 // use smithay::backend::renderer::{Color32F, Frame, Renderer as SmRenderer, Texture};
-use smithay::desktop::{Space, Window as SmWindow, WindowSurfaceType};
+use smithay::desktop::{Space, WindowSurfaceType};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 // use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale};
 use smithay::utils::{Logical, Point, Rectangle};
@@ -76,7 +82,7 @@ const GAP: i32 = 20;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Renderer {
-    pub space: Space<SmWindow>,
+    pub space: Space<WindowElements>,
 }
 
 impl Renderer {
@@ -111,18 +117,19 @@ impl Renderer {
                 WindowState::Floating => {
                     // let rect = Rectangle::from_loc_and_size((0, 0), window.geometry().size);
                     // self.render_window(window, rect);
-                    self.render_window(window, window.floating_rect());
+                    self.render_window(window, window.floating_rect_or_default());
                 }
                 _ => {}
             });
-        let windows = layout.iter_windows().map(|w| w.deref()).collect::<Vec<_>>();
-        self.space
-            .elements()
-            .filter(|w| !windows.contains(w))
-            .cloned()
-            .collect::<Vec<_>>()
-            .iter()
-            .for_each(|element| self.space.unmap_elem(element));
+        // let windows = layout.iter_windows().map(|w| w.deref()).collect::<Vec<_>>();
+        // self.space
+        //     .elements()
+        //     // .filter(|w| !windows.contains(&&(****w)))
+        //     .filter(|w| !windows.contains(&w.inner().inner()))
+        //     .cloned()
+        //     .collect::<Vec<_>>()
+        //     .iter()
+        //     .for_each(|element| self.space.unmap_elem(element));
         Some(())
     }
 
@@ -160,13 +167,16 @@ impl Renderer {
     }
 
     pub fn render_window(&mut self, window: &Window, rect: Rectangle<i32, Logical>) -> Option<()> {
-        let xdg = window.toplevel()?;
-        xdg.with_pending_state(|state| {
-            state.size = Some(rect.size);
-        });
-        xdg.send_configure();
+        // window.geometry().loc = rect.loc;
+        // window.geometry().size = rect.size;
+        // let xdg = window.toplevel()?;
+        // xdg.with_pending_state(|state| {
+        //     state.size = Some(rect.size);
+        // });
+        // xdg.send_configure();
+        window.resize(rect.size);
         self.space
-            .map_element(window.inner().clone(), rect.loc, false);
+            .map_element(window.clone().into(), rect.loc, false);
         /* println!(
             "({}, {}) -- ({}, {})",
             window.geometry().loc.x,
@@ -179,7 +189,7 @@ impl Renderer {
 }
 
 impl Deref for Renderer {
-    type Target = Space<SmWindow>;
+    type Target = Space<WindowElements>;
 
     fn deref(&self) -> &Self::Target {
         &self.space

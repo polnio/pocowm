@@ -19,7 +19,7 @@ fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt().init();
+    // tracing_subscriber::fmt().init();
     if let Err(err) = run() {
         eprintln!("{:?}", err);
         std::process::exit(1);

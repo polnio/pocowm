@@ -59,6 +59,7 @@ impl PocoWM {
                                 None,
                                 None,
                             );
+                            state.renderer.render(&state.layout);
                         }
                         WinitEvent::Input(event) => {
                             state.handle_input(event);

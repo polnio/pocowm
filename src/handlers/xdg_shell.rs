@@ -1,3 +1,4 @@
+use crate::grabs::resize_grab::ResizeEdge;
 use crate::grabs::{MoveGrab, ResizeGrab, ResizeState};
 use crate::window::Window;
 use crate::PocoWM;
@@ -5,12 +6,13 @@ use smithay::delegate_xdg_shell;
 use smithay::desktop::{find_popup_root_surface, get_popup_toplevel_coords, PopupKind};
 use smithay::input::pointer::{Focus, GrabStartData};
 use smithay::input::Seat;
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self, ResizeEdge};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{self};
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Rectangle, Serial};
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
     XdgToplevelSurfaceData,
@@ -27,21 +29,22 @@ impl XdgShellHandler for PocoWM {
             .seat
             .get_keyboard()
             .and_then(|k| k.current_focus())
-            .and_then(|s| self.layout.get_window_from_surface(&s))
-            .and_then(|w| self.layout.get_window_positions(w));
-        if let Some(pos) = positions.as_mut() {
-            pos.last_mut().map(|p| *p += 1);
-        }
+            .and_then(|w| self.layout.get_window_positions(&w));
+        positions
+            .as_mut()
+            .and_then(|p| p.last_mut())
+            .map(|p| *p += 1);
         self.layout.add_window(window.clone(), positions.as_deref());
+        self.renderer
+            .map_element(window.clone().into(), (0, 0), false);
         self.renderer.render(&self.layout);
         self.focus_window(Some(&window));
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        let mut positions = self
-            .layout
-            .get_window_from_surface(surface.wl_surface())
-            .and_then(|w| self.layout.get_window_positions(w));
+        let window = self.layout.get_window_from_surface(surface.wl_surface());
+        window.map(|w| self.renderer.unmap_elem(&w.clone().into()));
+        let mut positions = window.and_then(|w| self.layout.get_window_positions(w));
         self.layout.remove_window(positions.as_deref());
         self.renderer.render(&self.layout);
         positions
@@ -83,31 +86,7 @@ impl XdgShellHandler for PocoWM {
             return;
         };
 
-        let wl_surface = surface.wl_surface();
-
-        let Some(start_data) = check_grab(&seat, &wl_surface, serial) else {
-            return;
-        };
-        let Some(pointer) = seat.get_pointer() else {
-            return;
-        };
-        let Some(window) = self.layout.get_window_from_surface(wl_surface) else {
-            return;
-        };
-        if !window.state().is_floating() {
-            return;
-        }
-        let Some(initial_window_location) = self.renderer.element_location(window) else {
-            return;
-        };
-
-        let grab = MoveGrab {
-            start_data,
-            window: window.clone(),
-            initial_window_location,
-        };
-
-        pointer.set_grab(self, grab, serial, Focus::Clear)
+        self.xdg_move_request(&surface, &seat, serial);
     }
 
     fn resize_request(
@@ -115,52 +94,12 @@ impl XdgShellHandler for PocoWM {
         surface: ToplevelSurface,
         seat: WlSeat,
         serial: Serial,
-        edges: ResizeEdge,
+        edges: xdg_toplevel::ResizeEdge,
     ) {
         let Some(seat) = Seat::from_resource(&seat) else {
             return;
         };
-        let wl_surface = surface.wl_surface();
-        let Some(pointer) = seat.get_pointer() else {
-            return;
-        };
-        let Some(window) = self.layout.get_window_from_surface(wl_surface) else {
-            return;
-        };
-        if !window.state().is_floating() {
-            return;
-        }
-        let Some(start_data) = check_grab(&seat, wl_surface, serial) else {
-            return;
-        };
-        let Some(initial_window_location) = self.renderer.element_location(window) else {
-            return;
-        };
-        let initial_window_size = window.geometry().size;
-        surface.with_pending_state(|state| {
-            state.states.set(xdg_toplevel::State::Resizing);
-        });
-        surface.send_pending_configure();
-
-        let initial_window_rect =
-            Rectangle::from_loc_and_size(initial_window_location, initial_window_size);
-
-        ResizeState::with(surface.wl_surface(), |state| {
-            *state = ResizeState::Resizing {
-                edges: edges.into(),
-                initial_rect: initial_window_rect,
-            };
-        });
-
-        let grab = ResizeGrab {
-            start_data,
-            window: window.clone(),
-            initial_rect: initial_window_rect,
-            last_window_size: initial_window_rect.size,
-            edges: edges.into(),
-        };
-
-        pointer.set_grab(self, grab, serial, Focus::Clear)
+        self.xdg_resize_request(&surface, &seat, serial, edges.into());
     }
 }
 
@@ -175,7 +114,8 @@ fn check_grab(
     }
     let start_data = pointer.grab_start_data()?;
     let (focus, _) = start_data.focus.as_ref()?;
-    if !focus.id().same_client_as(&surface.id()) {
+    let focused_surface = focus.wl_surface()?;
+    if !focused_surface.id().same_client_as(&surface.id()) {
         return None;
     }
     Some(start_data)
@@ -196,7 +136,7 @@ impl PocoWM {
         let Some(output_geometry) = self.renderer.output_geometry(output) else {
             return;
         };
-        let Some(window_geometry) = self.renderer.element_geometry(window) else {
+        let Some(window_geometry) = self.renderer.element_geometry(&window.clone().into()) else {
             return;
         };
 
@@ -206,6 +146,106 @@ impl PocoWM {
         surface.with_pending_state(|state| {
             state.geometry = state.positioner.get_unconstrained_geometry(target_geometry);
         })
+    }
+}
+
+impl PocoWM {
+    pub fn xdg_move_request(
+        &mut self,
+        surface: &ToplevelSurface,
+        seat: &Seat<PocoWM>,
+        serial: Serial,
+    ) {
+        let Some(pointer) = seat.get_pointer() else {
+            return;
+        };
+        if !pointer.has_grab(serial) {
+            return;
+        }
+
+        let wl_surface = surface.wl_surface();
+        // let Some(start_data) = check_grab(&seat, &wl_surface, serial) else {
+        //     return;
+        // };
+        let Some(start_data) = pointer.grab_start_data() else {
+            return;
+        };
+        if !start_data
+            .focus
+            .as_ref()
+            .is_some_and(|f| f.0.same_client_as(&surface.wl_surface().id()))
+        {
+            return;
+        }
+        let Some(window) = self.layout.get_window_from_surface(&wl_surface) else {
+            return;
+        };
+        if !window.state().is_floating() {
+            return;
+        }
+        let Some(initial_window_location) = self.renderer.element_location(&window.clone().into())
+        else {
+            return;
+        };
+
+        let grab = MoveGrab {
+            start_data,
+            window: window.clone(),
+            initial_window_location,
+        };
+
+        pointer.set_grab(self, grab, serial, Focus::Clear)
+    }
+
+    pub fn xdg_resize_request(
+        &mut self,
+        surface: &ToplevelSurface,
+        seat: &Seat<PocoWM>,
+        serial: Serial,
+        edges: ResizeEdge,
+    ) {
+        let wl_surface = surface.wl_surface();
+        let Some(pointer) = seat.get_pointer() else {
+            return;
+        };
+        let Some(window) = self.layout.get_window_from_surface(wl_surface) else {
+            return;
+        };
+        if !window.state().is_floating() {
+            return;
+        }
+        let Some(start_data) = check_grab(&seat, wl_surface, serial) else {
+            return;
+        };
+        let Some(initial_window_location) = self.renderer.element_location(&window.clone().into())
+        else {
+            return;
+        };
+        let initial_window_size = window.geometry().size;
+        surface.with_pending_state(|state| {
+            state.states.set(xdg_toplevel::State::Resizing);
+        });
+        surface.send_pending_configure();
+
+        let initial_window_rect =
+            Rectangle::from_loc_and_size(initial_window_location, initial_window_size);
+
+        ResizeState::with(surface.wl_surface(), |state| {
+            *state = ResizeState::Resizing {
+                edges,
+                initial_rect: initial_window_rect,
+            };
+        });
+
+        let grab = ResizeGrab {
+            start_data,
+            window: window.clone(),
+            initial_rect: initial_window_rect,
+            last_window_size: initial_window_rect.size,
+            edges: edges.into(),
+        };
+
+        pointer.set_grab(self, grab, serial, Focus::Clear)
     }
 }
 
