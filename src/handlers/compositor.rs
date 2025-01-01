@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::state::ClientState;
 use crate::PocoWM;
 use smithay::backend::renderer::utils::on_commit_buffer_handler;
@@ -26,9 +28,9 @@ impl CompositorHandler for PocoWM {
     fn commit(&mut self, surface: &WlSurface) {
         on_commit_buffer_handler::<Self>(surface);
         if !is_sync_subsurface(surface) {
-            let mut root = surface.clone();
+            let mut root = Cow::Borrowed(surface);
             while let Some(parent) = get_parent(&root) {
-                root = parent;
+                root = Cow::Owned(parent);
             }
             self.layout
                 .get_window_from_surface(&root)

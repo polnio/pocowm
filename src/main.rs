@@ -5,6 +5,7 @@ mod input;
 mod layout;
 mod renderer;
 mod state;
+pub mod utils;
 mod window;
 
 use anyhow::Result;

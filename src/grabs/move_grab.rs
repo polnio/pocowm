@@ -1,4 +1,3 @@
-use crate::renderer::WindowElements;
 use crate::window::Window;
 use crate::PocoWM;
 use smithay::input::pointer::{
@@ -20,22 +19,22 @@ impl PointerGrab<PocoWM> for MoveGrab {
         &mut self,
         data: &mut PocoWM,
         handle: &mut PointerInnerHandle<'_, PocoWM>,
-        _focus: Option<(WindowElements, Point<f64, Logical>)>,
+        _focus: Option<(Window, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
         let delta = event.location - self.start_data.location;
         let new_location = (self.initial_window_location.to_f64() + delta).to_i32_round();
-        self.window.set_floating_loc(new_location);
+        self.window.floating_rect_mut().loc = new_location;
         data.renderer
-            .map_element(self.window.clone().into(), new_location, true);
+            .map_element(self.window.clone(), new_location, true);
     }
 
     fn relative_motion(
         &mut self,
         data: &mut PocoWM,
         handle: &mut PointerInnerHandle<'_, PocoWM>,
-        focus: Option<(WindowElements, Point<f64, Logical>)>,
+        focus: Option<(Window, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);

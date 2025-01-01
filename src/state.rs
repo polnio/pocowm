@@ -2,6 +2,7 @@ use crate::layout::Layout;
 use crate::renderer::Renderer;
 use anyhow::{Context as _, Result};
 use smithay::desktop::PopupManager;
+use smithay::input::keyboard::Keysym;
 use smithay::input::{Seat, SeatState};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{self, EventLoop, LoopHandle, LoopSignal};
@@ -15,6 +16,7 @@ use smithay::wayland::shm::ShmState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -39,9 +41,10 @@ pub struct PocoWM {
     pub(crate) data_device_state: DataDeviceState,
     pub(crate) compositor_state: CompositorState,
     pub(crate) xdg_shell_state: XdgShellState,
-    pub(crate) xdg_decoration_state: XdgDecorationState,
+    // pub(crate) xdg_decoration_state: XdgDecorationState,
     pub(crate) xdg_foreign_state: XdgForeignState,
     pub(crate) shm_state: ShmState,
+    pub(crate) pressed_keys: HashSet<Keysym>,
 }
 
 impl PocoWM {
@@ -57,7 +60,8 @@ impl PocoWM {
         let data_device_state = DataDeviceState::new::<Self>(&dh);
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
-        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
+        // We have to init decorations state, even though we don't access to it
+        let _xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
         let xdg_foreign_state = XdgForeignState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let popups = PopupManager::default();
@@ -120,8 +124,9 @@ impl PocoWM {
             seat_state,
             shm_state,
             xdg_shell_state,
-            xdg_decoration_state,
+            // xdg_decoration_state,
             xdg_foreign_state,
+            pressed_keys: HashSet::new(),
         })
     }
 

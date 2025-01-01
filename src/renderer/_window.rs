@@ -31,16 +31,21 @@ struct TargetState {
     pub touch_location: Option<Point<f64, Logical>>,
 }
 
-#[derive(Debug, Clone, Deref, DerefMut)]
+#[derive(Debug, Clone)]
 pub struct WindowElements {
-    #[deref]
-    #[deref_mut]
-    window: Window,
+    window: Arc<Window>,
     decorations: RefCell<DecorationsElements>,
     target_state: Arc<RwLock<TargetState>>,
 }
 
 impl WindowElements {
+    pub fn new(window: Arc<Window>) -> Self {
+        Self {
+            window,
+            decorations: RefCell::new(DecorationsElements::new()),
+            target_state: Arc::new(RwLock::new(TargetState::default())),
+        }
+    }
     pub fn inner(&self) -> &Window {
         &self.window
     }
@@ -53,15 +58,29 @@ impl PartialEq for WindowElements {
 }
 impl Eq for WindowElements {}
 
-impl From<Window> for WindowElements {
-    fn from(window: Window) -> Self {
-        Self {
-            window,
-            decorations: RefCell::new(DecorationsElements::new()),
-            target_state: Arc::new(RwLock::new(TargetState::default())),
-        }
+impl Deref for WindowElements {
+    type Target = Window;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window
     }
 }
+
+// impl DerefMut for WindowElements {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         &mut self.window
+//     }
+// }
+
+// impl From<Window> for WindowElements {
+//     fn from(window: Window) -> Self {
+//         Self {
+//             window,
+//             decorations: RefCell::new(DecorationsElements::new()),
+//             target_state: Arc::new(RwLock::new(TargetState::default())),
+//         }
+//     }
+// }
 
 render_elements! {
     pub WindowRenderElement<R> where R: ImportAll + ImportMem;
@@ -78,7 +97,7 @@ impl IsAlive for WindowElements {
 impl SpaceElement for WindowElements {
     fn geometry(&self) -> Rectangle<i32, Logical> {
         let mut geometry = self.window.geometry();
-        if self.window.has_decorations() {
+        if self.window.decorations().is_some() {
             geometry.size.h += DECORATIONS_SIZE as i32;
         }
         geometry
@@ -86,14 +105,14 @@ impl SpaceElement for WindowElements {
 
     fn bbox(&self) -> Rectangle<i32, Logical> {
         let mut bbox = self.window.bbox();
-        if self.window.has_decorations() {
+        if self.window.decorations().is_some() {
             bbox.size.h += DECORATIONS_SIZE as i32;
         }
         bbox
     }
 
     fn is_in_input_region(&self, point: &Point<f64, Logical>) -> bool {
-        if self.window.has_decorations() {
+        if self.window.decorations().is_some() {
             point.y < DECORATIONS_SIZE as f64
                 || self
                     .window
@@ -127,11 +146,11 @@ impl SpaceElement for WindowElements {
 impl PointerTarget<PocoWM> for WindowElements {
     fn enter(&self, seat: &Seat<PocoWM>, data: &mut PocoWM, event: &pointer::MotionEvent) {
         self.target_state.write().unwrap().pointer_location = Some(event.location);
-        if self.has_decorations() && event.location.y < DECORATIONS_SIZE as f64 {
+        if self.decorations().is_some() && event.location.y < DECORATIONS_SIZE as f64 {
             return;
         } else if let Some(wl_surface) = self.wl_surface() {
             let mut event = event.clone();
-            if self.has_decorations() {
+            if self.decorations().is_some() {
                 event.location.y -= DECORATIONS_SIZE as f64;
             }
             PointerTarget::<PocoWM>::enter(wl_surface.as_ref(), seat, data, &event);
@@ -140,11 +159,11 @@ impl PointerTarget<PocoWM> for WindowElements {
 
     fn motion(&self, seat: &Seat<PocoWM>, data: &mut PocoWM, event: &pointer::MotionEvent) {
         self.target_state.write().unwrap().pointer_location = Some(event.location);
-        if self.has_decorations() && event.location.y < DECORATIONS_SIZE as f64 {
+        if self.decorations().is_some() && event.location.y < DECORATIONS_SIZE as f64 {
             return;
         } else if let Some(wl_surface) = self.wl_surface() {
             let mut event = event.clone();
-            if self.has_decorations() {
+            if self.decorations().is_some() {
                 event.location.y -= DECORATIONS_SIZE as f64;
             }
             PointerTarget::<PocoWM>::motion(wl_surface.as_ref(), seat, data, &event);
@@ -167,18 +186,18 @@ impl PointerTarget<PocoWM> for WindowElements {
             return;
         };
 
-        let mut dir = ResizeEdge::empty();
+        let mut dir = Edge::empty();
         if loc.x < RESIZE_GRAB_SIZE as f64 {
-            dir |= ResizeEdge::LEFT;
+            dir |= Edge::LEFT;
         }
         if loc.y < RESIZE_GRAB_SIZE as f64 {
-            dir |= ResizeEdge::TOP;
+            dir |= Edge::TOP;
         }
         if loc.x > self.window.geometry().size.w as f64 - RESIZE_GRAB_SIZE as f64 {
-            dir |= ResizeEdge::RIGHT;
+            dir |= Edge::RIGHT;
         }
         if loc.y > self.window.geometry().size.h as f64 - RESIZE_GRAB_SIZE as f64 {
-            dir |= ResizeEdge::BOTTOM;
+            dir |= Edge::BOTTOM;
         }
         if !dir.is_empty() {
             if let Some(xdg) = self.toplevel() {
@@ -192,7 +211,7 @@ impl PointerTarget<PocoWM> for WindowElements {
             }
         }
 
-        if self.has_decorations() && loc.y < DECORATIONS_SIZE as f64 {
+        if self.decorations().is_some() && loc.y < DECORATIONS_SIZE as f64 {
             match self.decorations.borrow().get_button(loc) {
                 Some(decorations::Button::Close) => {
                     self.toplevel().map(|t| t.send_close());
@@ -469,7 +488,7 @@ where
         alpha: f32,
     ) -> Vec<C> {
         self.decorations.borrow_mut().redraw(&self.window);
-        let decorations = if self.window.has_decorations() {
+        let decorations = if self.window.decorations().is_some() {
             let d = self
                 .decorations
                 .borrow()

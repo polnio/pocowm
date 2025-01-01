@@ -1,7 +1,6 @@
-use crate::renderer::WindowElements;
+use crate::utils::Edge;
 use crate::window::Window;
 use crate::PocoWM;
-use bitflags::bitflags;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
     GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -17,41 +16,16 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 use std::cell::RefCell;
 use std::num::NonZeroI32;
 
-bitflags! {
-    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-    pub struct ResizeEdge: u32 {
-        const TOP    = 0b0001;
-        const BOTTOM = 0b0010;
-        const LEFT   = 0b0100;
-        const RIGHT  = 0b1000;
-    }
-}
-impl From<xdg_toplevel::ResizeEdge> for ResizeEdge {
-    fn from(edge: xdg_toplevel::ResizeEdge) -> Self {
-        match edge {
-            xdg_toplevel::ResizeEdge::Top => Self::TOP,
-            xdg_toplevel::ResizeEdge::Bottom => Self::BOTTOM,
-            xdg_toplevel::ResizeEdge::Left => Self::LEFT,
-            xdg_toplevel::ResizeEdge::Right => Self::RIGHT,
-            xdg_toplevel::ResizeEdge::TopLeft => Self::TOP | Self::LEFT,
-            xdg_toplevel::ResizeEdge::BottomLeft => Self::BOTTOM | Self::LEFT,
-            xdg_toplevel::ResizeEdge::TopRight => Self::TOP | Self::RIGHT,
-            xdg_toplevel::ResizeEdge::BottomRight => Self::BOTTOM | Self::RIGHT,
-            _ => Self::empty(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ResizeState {
     #[default]
     Idle,
     Resizing {
-        edges: ResizeEdge,
+        edges: Edge,
         initial_rect: Rectangle<i32, Logical>,
     },
     WaitingForLastCommit {
-        edges: ResizeEdge,
+        edges: Edge,
         initial_rect: Rectangle<i32, Logical>,
     },
 }
@@ -65,7 +39,7 @@ impl ResizeState {
         })
     }
 
-    fn commit(&mut self) -> Option<(ResizeEdge, Rectangle<i32, Logical>)> {
+    fn commit(&mut self) -> Option<(Edge, Rectangle<i32, Logical>)> {
         match *self {
             Self::Idle => None,
             Self::Resizing {
@@ -87,7 +61,7 @@ impl ResizeState {
 pub struct ResizeGrab {
     pub start_data: GrabStartData<PocoWM>,
     pub window: Window,
-    pub edges: ResizeEdge,
+    pub edges: Edge,
     pub initial_rect: Rectangle<i32, Logical>,
     pub last_window_size: Size<i32, Logical>,
 }
@@ -97,23 +71,23 @@ impl PointerGrab<PocoWM> for ResizeGrab {
         &mut self,
         data: &mut PocoWM,
         handle: &mut PointerInnerHandle<'_, PocoWM>,
-        _focus: Option<(WindowElements, Point<f64, Logical>)>,
+        _focus: Option<(Window, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
         let mut delta = event.location - self.start_data.location;
         let mut new_window_width = self.initial_rect.size.w;
         let mut new_window_height = self.initial_rect.size.h;
-        if self.edges.intersects(ResizeEdge::LEFT) {
+        if self.edges.intersects(Edge::LEFT) {
             delta.x = -delta.x;
         }
-        if self.edges.intersects(ResizeEdge::LEFT | ResizeEdge::RIGHT) {
+        if self.edges.intersects(Edge::LEFT | Edge::RIGHT) {
             new_window_width = (self.initial_rect.size.w as f64 + delta.x) as i32;
         }
-        if self.edges.intersects(ResizeEdge::TOP) {
+        if self.edges.intersects(Edge::TOP) {
             delta.y = -delta.y;
         }
-        if self.edges.intersects(ResizeEdge::TOP | ResizeEdge::BOTTOM) {
+        if self.edges.intersects(Edge::TOP | Edge::BOTTOM) {
             new_window_height = (self.initial_rect.size.h as f64 + delta.y) as i32;
         }
         let Some(wl_surface) = self.window.wl_surface() else {
@@ -151,7 +125,7 @@ impl PointerGrab<PocoWM> for ResizeGrab {
         &mut self,
         data: &mut PocoWM,
         handle: &mut PointerInnerHandle<'_, PocoWM>,
-        focus: Option<(WindowElements, Point<f64, Logical>)>,
+        focus: Option<(Window, Point<f64, Logical>)>,
         event: &RelativeMotionEvent,
     ) {
         handle.relative_motion(data, focus, event);
@@ -269,7 +243,7 @@ impl PointerGrab<PocoWM> for ResizeGrab {
         });
         xdg.send_pending_configure();
         if self.window.state().is_floating() {
-            self.window.set_floating_size(self.last_window_size);
+            self.window.floating_rect_mut().size = self.last_window_size;
         }
         ResizeState::with(xdg.wl_surface(), |state| {
             *state = ResizeState::WaitingForLastCommit {
@@ -287,24 +261,22 @@ pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<(
         return None;
     }
 
-    let mut window_loc = state.renderer.element_location(&window.clone().into())?;
+    let mut window_loc = state.renderer.element_location(window)?;
     let geometry = window.geometry();
 
     let new_loc: Point<Option<i32>, Logical> = ResizeState::with(surface, |state| {
         state
             .commit()
             .and_then(|(edges, initial_rect)| {
-                edges
-                    .intersects(ResizeEdge::TOP | ResizeEdge::LEFT)
-                    .then(|| {
-                        let new_x = edges.intersects(ResizeEdge::LEFT).then_some(
-                            initial_rect.loc.x + (initial_rect.size.w - geometry.size.w),
-                        );
-                        let new_y = edges.intersects(ResizeEdge::TOP).then_some(
-                            initial_rect.loc.y + (initial_rect.size.h - geometry.size.h),
-                        );
-                        (new_x, new_y).into()
-                    })
+                edges.intersects(Edge::TOP | Edge::LEFT).then(|| {
+                    let new_x = edges
+                        .intersects(Edge::LEFT)
+                        .then_some(initial_rect.loc.x + (initial_rect.size.w - geometry.size.w));
+                    let new_y = edges
+                        .intersects(Edge::TOP)
+                        .then_some(initial_rect.loc.y + (initial_rect.size.h - geometry.size.h));
+                    (new_x, new_y).into()
+                })
             })
             .unwrap_or_default()
     })
@@ -318,10 +290,10 @@ pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<(
     }
 
     if new_loc.x.is_some() || new_loc.y.is_some() {
-        window.set_floating_loc(window_loc);
+        window.floating_rect_mut().loc = window_loc;
         state
             .renderer
-            .map_element(window.clone().into(), window_loc, false);
+            .map_element(window.clone(), window_loc, false);
     }
 
     Some(())

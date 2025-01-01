@@ -1,5 +1,5 @@
-use crate::grabs::resize_grab::ResizeEdge;
 use crate::grabs::{MoveGrab, ResizeGrab, ResizeState};
+use crate::utils::Edge;
 use crate::window::Window;
 use crate::PocoWM;
 use smithay::delegate_xdg_shell;
@@ -25,6 +25,16 @@ impl XdgShellHandler for PocoWM {
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
         let window = Window::from_surface(surface);
+        let output_geo = self
+            .renderer
+            .outputs()
+            .next()
+            .and_then(|o| self.renderer.output_geometry(o))
+            .unwrap_or_default();
+        *window.floating_rect_mut() = Rectangle::from_loc_and_size(
+            (output_geo.size.w / 4, output_geo.size.h / 4),
+            (output_geo.size.w / 2, output_geo.size.h / 2),
+        );
         let mut positions = self
             .seat
             .get_keyboard()
@@ -35,15 +45,14 @@ impl XdgShellHandler for PocoWM {
             .and_then(|p| p.last_mut())
             .map(|p| *p += 1);
         self.layout.add_window(window.clone(), positions.as_deref());
-        self.renderer
-            .map_element(window.clone().into(), (0, 0), false);
+        self.renderer.map_element(window.clone(), (0, 0), false);
         self.renderer.render(&self.layout);
         self.focus_window(Some(&window));
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         let window = self.layout.get_window_from_surface(surface.wl_surface());
-        window.map(|w| self.renderer.unmap_elem(&w.clone().into()));
+        window.map(|w| self.renderer.unmap_elem(w));
         let mut positions = window.and_then(|w| self.layout.get_window_positions(w));
         self.layout.remove_window(positions.as_deref());
         self.renderer.render(&self.layout);
@@ -136,7 +145,7 @@ impl PocoWM {
         let Some(output_geometry) = self.renderer.output_geometry(output) else {
             return;
         };
-        let Some(window_geometry) = self.renderer.element_geometry(&window.clone().into()) else {
+        let Some(window_geometry) = self.renderer.element_geometry(window) else {
             return;
         };
 
@@ -183,8 +192,7 @@ impl PocoWM {
         if !window.state().is_floating() {
             return;
         }
-        let Some(initial_window_location) = self.renderer.element_location(&window.clone().into())
-        else {
+        let Some(initial_window_location) = self.renderer.element_location(window) else {
             return;
         };
 
@@ -202,7 +210,7 @@ impl PocoWM {
         surface: &ToplevelSurface,
         seat: &Seat<PocoWM>,
         serial: Serial,
-        edges: ResizeEdge,
+        edges: Edge,
     ) {
         let wl_surface = surface.wl_surface();
         let Some(pointer) = seat.get_pointer() else {
@@ -217,8 +225,7 @@ impl PocoWM {
         let Some(start_data) = check_grab(&seat, wl_surface, serial) else {
             return;
         };
-        let Some(initial_window_location) = self.renderer.element_location(&window.clone().into())
-        else {
+        let Some(initial_window_location) = self.renderer.element_location(window) else {
             return;
         };
         let initial_window_size = window.geometry().size;

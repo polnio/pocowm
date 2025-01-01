@@ -3,11 +3,11 @@ use crate::window::Window;
 use crate::PocoWM;
 use bitflags::bitflags;
 use smithay::backend::input::{
-    AbsolutePositionEvent as _, ButtonState, Event, InputBackend, InputEvent, KeyState,
-    KeyboardKeyEvent as _, PointerButtonEvent as _,
+    AbsolutePositionEvent as _, Axis, ButtonState, Event as _, InputBackend, InputEvent, KeyState,
+    KeyboardKeyEvent as _, PointerAxisEvent as _, PointerButtonEvent as _,
 };
-use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
-use smithay::input::pointer::{ButtonEvent, MotionEvent};
+use smithay::input::keyboard;
+use smithay::input::pointer;
 use smithay::utils::SERIAL_COUNTER;
 
 bitflags! {
@@ -19,8 +19,8 @@ bitflags! {
     }
 }
 
-impl From<&ModifiersState> for KeyModifiers {
-    fn from(value: &ModifiersState) -> Self {
+impl From<&keyboard::ModifiersState> for KeyModifiers {
+    fn from(value: &keyboard::ModifiersState) -> Self {
         let mut modifiers = KeyModifiers::empty();
         if value.ctrl {
             modifiers |= KeyModifiers::CTRL;
@@ -53,25 +53,33 @@ impl PocoWM {
                         serial,
                         time,
                         |state, modifiers, key| {
+                            match event_state {
+                                KeyState::Pressed => {
+                                    state.pressed_keys.insert(key.modified_sym());
+                                }
+                                KeyState::Released => {
+                                    state.pressed_keys.remove(&key.modified_sym());
+                                }
+                            }
                             if event_state != KeyState::Pressed {
-                                return FilterResult::Forward;
+                                return keyboard::FilterResult::Forward;
                             }
                             let modifiers = KeyModifiers::from(modifiers);
                             if !modifiers.contains(KeyModifiers::ALT) {
-                                return FilterResult::Forward;
+                                return keyboard::FilterResult::Forward;
                             }
                             let syms = key.raw_syms();
-                            if syms.contains(&Keysym::Return) {
+                            if syms.contains(&keyboard::Keysym::Return) {
                                 let _ = std::process::Command::new("kitty")
                                     .stdout(std::process::Stdio::null())
                                     .stderr(std::process::Stdio::null())
                                     .spawn();
-                                return FilterResult::Intercept(());
+                                return keyboard::FilterResult::Intercept(());
                             }
-                            if syms.contains(&Keysym::e) {
+                            if syms.contains(&keyboard::Keysym::e) {
                                 keyboard
                                     .current_focus()
-                                    .and_then(|w| w.inner().state().is_tiled().then_some(w))
+                                    .and_then(|w| if w.state().is_tiled() { Some(w) } else { None })
                                     .and_then(|w| state.layout.get_window_positions(&w))
                                     .map(|positions| {
                                         let mut layout = &mut state.layout;
@@ -90,22 +98,22 @@ impl PocoWM {
                                         };
                                         state.renderer.render(&state.layout);
                                     });
-                                return FilterResult::Intercept(());
+                                return keyboard::FilterResult::Intercept(());
                             }
 
-                            if syms.contains(&Keysym::b) {
+                            if syms.contains(&keyboard::Keysym::b) {
                                 state.switch_to_layout(LayoutType::Vertical);
-                                return FilterResult::Intercept(());
+                                return keyboard::FilterResult::Intercept(());
                             }
-                            if syms.contains(&Keysym::n) {
+                            if syms.contains(&keyboard::Keysym::n) {
                                 state.switch_to_layout(LayoutType::Horizontal);
-                                return FilterResult::Intercept(());
+                                return keyboard::FilterResult::Intercept(());
                             }
-                            if syms.contains(&Keysym::f) {
+                            if syms.contains(&keyboard::Keysym::f) {
                                 state.toggle_floating();
-                                return FilterResult::Intercept(());
+                                return keyboard::FilterResult::Intercept(());
                             }
-                            FilterResult::Forward
+                            keyboard::FilterResult::Forward
                         },
                     )
                 });
@@ -118,23 +126,24 @@ impl PocoWM {
                     event.position_transformed(output_geometry.size) + output_geometry.loc.to_f64();
                 let serial = SERIAL_COUNTER.next_serial();
                 let pointer = self.seat.get_pointer()?;
-
-                let pointed_window = self.renderer.element_under(pos).map(|(w, _)| w.clone());
-                let focused_window = self.seat.get_keyboard().and_then(|k| k.current_focus());
-                Option::zip(pointed_window, focused_window).map(
-                    |(pointed_window, focused_window)| {
-                        if pointed_window != focused_window {
-                            self.focus_window(Some(&pointed_window));
-                        }
-                    },
-                );
+                if !pointer.is_grabbed() {
+                    let pointed_window = self.renderer.element_under(pos).map(|(w, _)| w.clone());
+                    let focused_window = self.seat.get_keyboard().and_then(|k| k.current_focus());
+                    Option::zip(pointed_window, focused_window).map(
+                        |(pointed_window, focused_window)| {
+                            if pointed_window != focused_window {
+                                self.focus_window(Some(&pointed_window));
+                            }
+                        },
+                    );
+                }
 
                 pointer.motion(
                     self,
                     self.renderer
                         .element_under(pos)
                         .map(|(w, p)| (w.clone(), p.to_f64())),
-                    &MotionEvent {
+                    &pointer::MotionEvent {
                         location: pos,
                         serial,
                         time: event.time_msec(),
@@ -145,6 +154,7 @@ impl PocoWM {
             InputEvent::PointerButton { event, .. } => {
                 let pointer = self.seat.get_pointer()?;
                 let button_state = event.state();
+                let serial = SERIAL_COUNTER.next_serial();
                 match button_state {
                     ButtonState::Pressed if pointer.is_grabbed() => {
                         self.layout.iter_windows().for_each(|window| {
@@ -156,8 +166,7 @@ impl PocoWM {
                     ButtonState::Pressed => {
                         let (window, _location) =
                             self.renderer.element_under(pointer.current_location())?;
-                        let window = window.inner().clone().into();
-                        self.focus_window(Some(&window));
+                        self.focus_window(Some(&window.clone()));
                         self.renderer.elements().for_each(|window| {
                             window.toplevel().map(|t| t.send_pending_configure());
                         });
@@ -165,10 +174,9 @@ impl PocoWM {
                     ButtonState::Released => {}
                 }
 
-                let serial = SERIAL_COUNTER.next_serial();
                 pointer.button(
                     self,
-                    &ButtonEvent {
+                    &pointer::ButtonEvent {
                         button: event.button_code(),
                         state: button_state,
                         serial,
@@ -177,22 +185,50 @@ impl PocoWM {
                 );
                 pointer.frame(self);
             }
+            InputEvent::PointerAxis { event } => {
+                let pointer = self.seat.get_pointer()?;
+                let mut frame = pointer::AxisFrame::new(event.time_msec());
+                frame = self.handle_axis::<B>(frame, &event, Axis::Horizontal);
+                frame = self.handle_axis::<B>(frame, &event, Axis::Vertical);
+                pointer.axis(self, frame);
+                pointer.frame(self);
+            }
             _ => {}
         }
 
         Some(())
     }
 
+    pub fn handle_axis<B: InputBackend>(
+        &mut self,
+        mut frame: pointer::AxisFrame,
+        event: &B::PointerAxisEvent,
+        axis: Axis,
+    ) -> pointer::AxisFrame {
+        let amount = event
+            .amount(axis)
+            .unwrap_or_else(|| event.amount_v120(axis).unwrap_or_default() * 15.0 / 120.0);
+        if amount != 0.0 {
+            frame = frame.relative_direction(axis, event.relative_direction(axis));
+            frame = frame.value(axis, amount);
+            if let Some(discrete) = event.amount_v120(axis) {
+                frame = frame.v120(axis, discrete as i32);
+            }
+        }
+        if event.amount(axis) == Some(0.0) {
+            frame = frame.stop(axis);
+        }
+        frame
+    }
+
     pub fn focus_window(&mut self, window: Option<&Window>) {
-        if let Some(window) = window {
-            self.layout.iter_mut_windows().for_each(|w| {
-                w.set_activated(false);
-            });
-            window.set_activated(true);
+        if let Some(window) = window.as_ref() {
+            self.layout.iter_windows().for_each(Window::unfocus);
+            window.focus();
         }
         self.seat.get_keyboard().map(|keyboard| {
             let serial = SERIAL_COUNTER.next_serial();
-            keyboard.set_focus(self, window.map(|w| w.clone().into()), serial);
+            keyboard.set_focus(self, window.cloned(), serial);
         });
     }
 }

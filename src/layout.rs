@@ -194,11 +194,7 @@ impl LayoutManager {
 
 impl PocoWM {
     pub fn switch_to_layout(&mut self, layout_type: LayoutType) {
-        let focused_window = self
-            .seat
-            .get_keyboard()
-            .and_then(|k| k.current_focus())
-            .map(|f| f.inner().clone());
+        let focused_window = self.seat.get_keyboard().and_then(|k| k.current_focus());
         if let Some(focused_window) = focused_window {
             if focused_window.state().is_floating() {
                 return;
@@ -221,12 +217,12 @@ impl PocoWM {
         let Some(focused_window) = focused_window else {
             return;
         };
-        let state = focused_window.state();
-        focused_window.set_state(match state {
+        let window_state = focused_window.state().clone();
+        *focused_window.state_mut() = match window_state {
             WindowState::Floating => WindowState::Tiled,
             WindowState::Tiled => WindowState::Floating,
             state => state,
-        });
+        };
         self.renderer.render(&self.layout);
     }
 }

@@ -1,4 +1,4 @@
-use crate::renderer::WindowElements;
+use crate::window::Window;
 use crate::PocoWM;
 use smithay::delegate_seat;
 use smithay::input::pointer::CursorImageStatus;
@@ -8,13 +8,13 @@ use smithay::wayland::seat::WaylandFocus as _;
 use smithay::wayland::selection::data_device::set_data_device_focus;
 
 impl SeatHandler for PocoWM {
-    // type PointerFocus = WlSurface;
-    // type KeyboardFocus = WlSurface;
-    // type TouchFocus = WlSurface;
+    // type KeyboardFocus = WindowElements;
+    // type PointerFocus = WindowElements;
+    // type TouchFocus = WindowElements;
 
-    type KeyboardFocus = WindowElements;
-    type PointerFocus = WindowElements;
-    type TouchFocus = WindowElements;
+    type KeyboardFocus = Window;
+    type PointerFocus = Window;
+    type TouchFocus = Window;
 
     fn seat_state(&mut self) -> &mut SeatState<Self> {
         &mut self.seat_state
