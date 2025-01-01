@@ -1,5 +1,5 @@
 use super::decorations::{self, DECORATIONS_HEIGHT};
-use super::Window;
+use super::{Window, WindowState};
 use crate::utils::Edge;
 use crate::PocoWM;
 use smithay::backend::input::{ButtonState, KeyState};
@@ -147,8 +147,13 @@ impl PointerTarget<PocoWM> for Window {
                             return;
                         }
                         if let Some(xdg) = self.toplevel().cloned() {
+                            let is_maximized = self.state().contains(WindowState::MAXIMIZED);
                             data.loop_handle.insert_idle(move |data| {
-                                data.xdg_maximize_request(&xdg);
+                                if is_maximized {
+                                    data.xdg_unmaximize_request(&xdg);
+                                } else {
+                                    data.xdg_maximize_request(&xdg);
+                                }
                             });
                         }
                     }
