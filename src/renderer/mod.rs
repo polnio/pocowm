@@ -15,26 +15,26 @@ pub struct Renderer {
 impl Renderer {
     pub fn render(&mut self, layout: &Layout) -> Option<()> {
         let output = self.space.outputs().next()?;
-        let mut rect = self.space.output_geometry(output)?;
+        let full_rect = self.space.output_geometry(output)?;
+        let mut rect = full_rect;
         rect.loc.x += GAP;
         rect.loc.y += GAP;
         rect.size.w -= GAP * 2;
         rect.size.h -= GAP * 2;
         self.render_rec(&layout, rect)?;
-        layout
-            .iter_windows()
-            .for_each(|window| match *window.state() {
-                WindowState::Floating => {
-                    self.render_window(window, *window.floating_rect());
-                }
-                _ => {}
-            });
+        layout.iter_windows().for_each(|window| {
+            if window.state().contains(WindowState::MAXIMIZED) {
+                self.render_window(window, full_rect);
+            } else if window.state().contains(WindowState::FLOATING) {
+                self.render_window(window, *window.floating_rect());
+            }
+        });
         Some(())
     }
 
     fn render_rec(&mut self, layout: &Layout, rect: Rectangle<i32, Logical>) -> Option<()> {
         let elements = layout.elements.iter().filter(|e| match e {
-            LayoutElement::Window(w) => w.state().is_tiled(),
+            LayoutElement::Window(w) => w.state().is_empty(),
             _ => true,
         });
         let elements_count = elements.clone().count() as i32;

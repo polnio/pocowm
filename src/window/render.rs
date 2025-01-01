@@ -1,7 +1,6 @@
-use super::borders::BORDER_SIZE;
-use super::decorations::DECORATIONS_HEIGHT;
+use super::borders::{BordersElement, BORDER_SIZE};
+use super::decorations::{DecorationsElement, DECORATIONS_HEIGHT};
 use super::Window;
-use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
@@ -85,7 +84,9 @@ impl SpaceElement for Window {
 render_elements! {
     pub WindowElement<R> where R: ImportAll + ImportMem;
     Window=WaylandSurfaceRenderElement<R>,
-    Decorations=SolidColorRenderElement,
+    // DecorationsAndBorders=SolidColorRenderElement,
+    Decorations=DecorationsElement,
+    Borders=BordersElement,
 }
 
 impl<R> AsRenderElements<R> for Window

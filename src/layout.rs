@@ -143,60 +143,11 @@ impl Layout {
     }
 }
 
-/* #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct LayoutManager {
-    pub layout: Layout,
-    pub floating_windows: Vec<Window>,
-}
-
-impl LayoutManager {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn iter_windows(&self) -> impl Iterator<Item = &Window> {
-        self.layout
-            .iter_windows()
-            .chain(self.floating_windows.iter())
-    }
-    pub fn get_window_from_surface(&self, wl_surface: &WlSurface) -> Option<&Window> {
-        self.floating_windows
-            .iter()
-            .find(|w| w.wl_surface().is_some_and(|s| s.as_ref() == wl_surface))
-            .or_else(|| self.layout.get_window_from_surface(wl_surface))
-    }
-    pub fn remove_window(&mut self, window: &Window) -> Option<Window> {
-        if let Some(index) = self.floating_windows.iter().position(|w| w == window) {
-            Some(self.floating_windows.remove(index))
-        } else if let Some(positions) = self.layout.get_window_positions(window) {
-            self.layout.remove_window(Some(&positions))
-        } else {
-            None
-        }
-    }
-    pub fn is_floating(&self, window: &Window) -> bool {
-        self.floating_windows.contains(window)
-    }
-    pub fn toggle_floating(&mut self, window: &Window) {
-        let index = self.floating_windows.iter().position(|w| w == window);
-        if let Some(index) = index {
-            let window = self.floating_windows.remove(index);
-            self.layout.add_window(window, None);
-        } else {
-            let positions = self.layout.get_window_positions(&window);
-            let window = self
-                .layout
-                .remove_window(positions.as_deref())
-                .unwrap_or_else(|| window.clone());
-            self.floating_windows.push(window);
-        }
-    }
-} */
-
 impl PocoWM {
     pub fn switch_to_layout(&mut self, layout_type: LayoutType) {
         let focused_window = self.seat.get_keyboard().and_then(|k| k.current_focus());
         if let Some(focused_window) = focused_window {
-            if focused_window.state().is_floating() {
+            if focused_window.state().contains(WindowState::FLOATING) {
                 return;
             }
             let mut layout = Layout::new(layout_type);
@@ -217,12 +168,7 @@ impl PocoWM {
         let Some(focused_window) = focused_window else {
             return;
         };
-        let window_state = focused_window.state().clone();
-        *focused_window.state_mut() = match window_state {
-            WindowState::Floating => WindowState::Tiled,
-            WindowState::Tiled => WindowState::Floating,
-            state => state,
-        };
+        focused_window.state_mut().toggle(WindowState::FLOATING);
         self.renderer.render(&self.layout);
     }
 }

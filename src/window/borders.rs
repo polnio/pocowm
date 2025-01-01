@@ -4,6 +4,7 @@ use super::Window;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::Renderer;
+use smithay::render_elements;
 use smithay::utils::{Logical, Physical, Point, Scale};
 use std::cell::RefCell;
 
@@ -69,8 +70,17 @@ impl Borders {
     }
 }
 
-impl<R: Renderer> AsRenderElements<R> for Borders {
-    type RenderElement = SolidColorRenderElement;
+render_elements! {
+    pub BordersElement;
+    Borders=SolidColorRenderElement,
+}
+
+impl<R> AsRenderElements<R> for Borders
+where
+    R: Renderer,
+    <R as Renderer>::TextureId: 'static,
+{
+    type RenderElement = BordersElement;
 
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
@@ -95,8 +105,7 @@ impl<R: Renderer> AsRenderElements<R> for Borders {
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
             SolidColorRenderElement::from_buffer(
                 &buffers.bottom,
                 location
@@ -104,16 +113,14 @@ impl<R: Renderer> AsRenderElements<R> for Borders {
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
             SolidColorRenderElement::from_buffer(
                 &buffers.left,
                 location - Point::from((BORDER_SIZE as i32, BORDER_SIZE as i32)),
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
             SolidColorRenderElement::from_buffer(
                 &buffers.right,
                 location
@@ -121,8 +128,11 @@ impl<R: Renderer> AsRenderElements<R> for Borders {
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
         ]
+        .into_iter()
+        .map(BordersElement::from)
+        .map(C::from)
+        .collect::<Vec<_>>()
     }
 }

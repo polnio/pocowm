@@ -1,5 +1,5 @@
 use crate::utils::Edge;
-use crate::window::Window;
+use crate::window::{Window, WindowState};
 use crate::PocoWM;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
@@ -31,11 +31,10 @@ pub enum ResizeState {
 }
 
 impl ResizeState {
-    pub fn with<T>(surface: &WlSurface, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+    pub fn with<T>(surface: &WlSurface, f: impl FnOnce(&mut Self) -> T) -> T {
         with_states(surface, |states| {
-            states.data_map.insert_if_missing(RefCell::<Self>::default);
-            let state = states.data_map.get::<RefCell<Self>>()?;
-            Some(f(&mut state.borrow_mut()))
+            let state = states.data_map.get_or_insert(RefCell::<Self>::default);
+            f(&mut state.borrow_mut())
         })
     }
 
@@ -242,7 +241,7 @@ impl PointerGrab<PocoWM> for ResizeGrab {
             state.size = Some(self.last_window_size);
         });
         xdg.send_pending_configure();
-        if self.window.state().is_floating() {
+        if self.window.state().contains(WindowState::FLOATING) {
             self.window.floating_rect_mut().size = self.last_window_size;
         }
         ResizeState::with(xdg.wl_surface(), |state| {
@@ -257,7 +256,7 @@ impl PointerGrab<PocoWM> for ResizeGrab {
 /// Should be called on `WlSurface::commit`
 pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<()> {
     let window = state.layout.get_mut_window_from_surface(surface)?;
-    if !window.state().is_floating() {
+    if !window.state().contains(WindowState::FLOATING) {
         return None;
     }
 
@@ -279,8 +278,7 @@ pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<(
                 })
             })
             .unwrap_or_default()
-    })
-    .unwrap_or_default();
+    });
 
     if let Some(new_x) = new_loc.x {
         window_loc.x = new_x;

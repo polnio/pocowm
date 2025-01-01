@@ -79,7 +79,7 @@ impl PocoWM {
                             if syms.contains(&keyboard::Keysym::e) {
                                 keyboard
                                     .current_focus()
-                                    .and_then(|w| if w.state().is_tiled() { Some(w) } else { None })
+                                    .and_then(|w| if w.state().is_empty() { Some(w) } else { None })
                                     .and_then(|w| state.layout.get_window_positions(&w))
                                     .map(|positions| {
                                         let mut layout = &mut state.layout;

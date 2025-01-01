@@ -74,33 +74,35 @@ impl PointerTarget<PocoWM> for Window {
             const BTN_RIGHT: u32 = 0x111;
             match event.button {
                 BTN_LEFT => {
-                    let surface = self.toplevel().cloned().unwrap();
-                    let seat = seat.clone();
-                    let serial = event.serial;
-                    data.loop_handle.insert_idle(move |state| {
-                        state.xdg_move_request(&surface, &seat, serial);
-                    });
+                    if let Some(surface) = self.toplevel().cloned() {
+                        let seat = seat.clone();
+                        let serial = event.serial;
+                        data.loop_handle.insert_idle(move |state| {
+                            state.xdg_move_request(&surface, &seat, serial);
+                        });
+                    }
                 }
                 BTN_RIGHT => {
-                    let surface = self.toplevel().cloned().unwrap();
-                    let seat = seat.clone();
-                    let serial = event.serial;
-                    let mut edges = Edge::empty();
-                    if loc.x < self.geometry().size.w as f64 / 2.0 {
-                        edges |= Edge::LEFT;
+                    if let Some(surface) = self.toplevel().cloned() {
+                        let seat = seat.clone();
+                        let serial = event.serial;
+                        let mut edges = Edge::empty();
+                        if loc.x < self.geometry().size.w as f64 / 2.0 {
+                            edges |= Edge::LEFT;
+                        }
+                        if loc.y < self.geometry().size.h as f64 / 2.0 {
+                            edges |= Edge::TOP;
+                        }
+                        if loc.x > self.geometry().size.w as f64 / 2.0 {
+                            edges |= Edge::RIGHT;
+                        }
+                        if loc.y > self.geometry().size.h as f64 / 2.0 {
+                            edges |= Edge::BOTTOM;
+                        }
+                        data.loop_handle.insert_idle(move |state| {
+                            state.xdg_resize_request(&surface, &seat, serial, edges);
+                        });
                     }
-                    if loc.y < self.geometry().size.h as f64 / 2.0 {
-                        edges |= Edge::TOP;
-                    }
-                    if loc.x > self.geometry().size.w as f64 / 2.0 {
-                        edges |= Edge::RIGHT;
-                    }
-                    if loc.y > self.geometry().size.h as f64 / 2.0 {
-                        edges |= Edge::BOTTOM;
-                    }
-                    data.loop_handle.insert_idle(move |state| {
-                        state.xdg_resize_request(&surface, &seat, serial, edges);
-                    });
                 }
                 _ => {}
             }
@@ -141,10 +143,14 @@ impl PointerTarget<PocoWM> for Window {
                         self.toplevel().map(|t| t.send_close());
                     }
                     Some(decorations::Button::Maximize) => {
-                        // window.set_state(WindowState::Maximized);
-                        // if let Some(xdg) = window.toplevel() {
-                        //     data.maximize_request(xdg.clone());
-                        // }
+                        if event.state != ButtonState::Pressed {
+                            return;
+                        }
+                        if let Some(xdg) = self.toplevel().cloned() {
+                            data.loop_handle.insert_idle(move |data| {
+                                data.xdg_maximize_request(&xdg);
+                            });
+                        }
                     }
                     Some(decorations::Button::Minimize) => {
                         // window.set_state(WindowState::Minimized);

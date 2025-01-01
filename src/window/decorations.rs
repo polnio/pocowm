@@ -4,6 +4,7 @@ use crate::window::Window;
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::Renderer;
+use smithay::render_elements;
 use smithay::utils::{Logical, Physical, Point, Scale};
 
 pub const DECORATIONS_HEIGHT: u32 = BUTTON_SIZE + 2 * BUTTON_GAP;
@@ -95,8 +96,17 @@ impl Decorations {
     }
 }
 
-impl<R: Renderer> AsRenderElements<R> for Decorations {
-    type RenderElement = SolidColorRenderElement;
+render_elements! {
+    pub DecorationsElement;
+    Decorations=SolidColorRenderElement,
+}
+
+impl<R> AsRenderElements<R> for Decorations
+where
+    R: Renderer,
+    <R as Renderer>::TextureId: 'static,
+{
+    type RenderElement = DecorationsElement;
 
     fn render_elements<C: From<Self::RenderElement>>(
         &self,
@@ -114,8 +124,7 @@ impl<R: Renderer> AsRenderElements<R> for Decorations {
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
             SolidColorRenderElement::from_buffer(
                 &buffers.maximize_button,
                 location
@@ -126,8 +135,7 @@ impl<R: Renderer> AsRenderElements<R> for Decorations {
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
             SolidColorRenderElement::from_buffer(
                 &buffers.minimize_button,
                 location
@@ -138,16 +146,18 @@ impl<R: Renderer> AsRenderElements<R> for Decorations {
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
             SolidColorRenderElement::from_buffer(
                 &buffers.background,
                 location,
                 scale,
                 alpha,
                 Kind::Unspecified,
-            )
-            .into(),
+            ),
         ]
+        .into_iter()
+        .map(DecorationsElement::from)
+        .map(C::from)
+        .collect::<Vec<_>>()
     }
 }

@@ -1,6 +1,6 @@
 use crate::grabs::{MoveGrab, ResizeGrab, ResizeState};
 use crate::utils::Edge;
-use crate::window::Window;
+use crate::window::{Window, WindowState};
 use crate::PocoWM;
 use smithay::delegate_xdg_shell;
 use smithay::desktop::{find_popup_root_surface, get_popup_toplevel_coords, PopupKind};
@@ -110,6 +110,10 @@ impl XdgShellHandler for PocoWM {
         };
         self.xdg_resize_request(&surface, &seat, serial, edges.into());
     }
+
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        self.xdg_maximize_request(&surface);
+    }
 }
 
 fn check_grab(
@@ -189,7 +193,7 @@ impl PocoWM {
         let Some(window) = self.layout.get_window_from_surface(&wl_surface) else {
             return;
         };
-        if !window.state().is_floating() {
+        if *window.state() != WindowState::FLOATING {
             return;
         }
         let Some(initial_window_location) = self.renderer.element_location(window) else {
@@ -219,7 +223,7 @@ impl PocoWM {
         let Some(window) = self.layout.get_window_from_surface(wl_surface) else {
             return;
         };
-        if !window.state().is_floating() {
+        if *window.state() != WindowState::FLOATING {
             return;
         }
         let Some(start_data) = check_grab(&seat, wl_surface, serial) else {
@@ -253,6 +257,14 @@ impl PocoWM {
         };
 
         pointer.set_grab(self, grab, serial, Focus::Clear)
+    }
+
+    pub fn xdg_maximize_request(&mut self, surface: &ToplevelSurface) {
+        let Some(window) = self.layout.get_window_from_surface(surface.wl_surface()) else {
+            return;
+        };
+        window.state_mut().toggle(WindowState::MAXIMIZED);
+        self.renderer.render(&self.layout);
     }
 }
 

@@ -3,9 +3,10 @@ pub mod decorations;
 pub mod render;
 pub mod seat;
 
+use bitflags::bitflags;
 use borders::Borders;
 use decorations::{Decorations, DECORATIONS_HEIGHT};
-use derive_more::{Deref, DerefMut, IsVariant};
+use derive_more::{Deref, DerefMut};
 use getset::{Getters, Setters};
 use smithay::desktop::Window as InnerWindow;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
@@ -13,14 +14,47 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use std::cell::{Ref, RefCell, RefMut};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, IsVariant)]
+/* #[derive(Debug, Clone, Default, PartialEq, Eq, IsVariant)]
 pub enum WindowState {
     #[default]
     Tiled,
     Floating,
     Maximized,
     Fullscreen,
+} */
+
+bitflags! {
+    #[derive(Debug, Clone, Default, PartialEq, Eq)]
+    pub struct WindowState: u8 {
+        const FLOATING   = 0b0001;
+        const MAXIMIZED  = 0b0010;
+        const FULLSCREEN = 0b0100;
+    }
 }
+
+/* impl WindowState {
+    pub fn is_tiled(&self) -> bool {
+        !self.intersects(WindowState::FLOATING | WindowState::MAXIMIZED | WindowState::FULLSCREEN)
+    }
+    pub fn is_floating(&self) -> bool {
+        self.contains(WindowState::FLOATING)
+    }
+    pub fn is_maximized(&self) -> bool {
+        self.contains(WindowState::MAXIMIZED)
+    }
+    pub fn is_fullscreen(&self) -> bool {
+        self.contains(WindowState::FULLSCREEN)
+    }
+    pub fn toggle_floating(&mut self) {
+        self.toggle(WindowState::FLOATING);
+    }
+    pub fn toggle_maximized(&mut self) {
+        self.toggle(WindowState::MAXIMIZED);
+    }
+    pub fn toggle_fullscreen(&mut self) {
+        self.toggle(WindowState::FULLSCREEN);
+    }
+} */
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WindowSeatData {
