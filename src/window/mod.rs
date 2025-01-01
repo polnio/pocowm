@@ -28,7 +28,8 @@ bitflags! {
     pub struct WindowState: u8 {
         const FLOATING   = 0b0001;
         const MAXIMIZED  = 0b0010;
-        const FULLSCREEN = 0b0100;
+        const MINIMIZED  = 0b0100;
+        const FULLSCREEN = 0b1000;
     }
 }
 

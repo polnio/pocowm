@@ -23,7 +23,9 @@ impl Renderer {
         rect.size.h -= GAP * 2;
         self.render_rec(&layout, rect)?;
         layout.iter_windows().for_each(|window| {
-            if window.state().contains(WindowState::MAXIMIZED) {
+            if window.state().contains(WindowState::MINIMIZED) {
+                self.unmap_elem(window);
+            } else if window.state().contains(WindowState::MAXIMIZED) {
                 self.render_window(window, full_rect);
             } else if window.state().contains(WindowState::FLOATING) {
                 self.render_window(window, *window.floating_rect());

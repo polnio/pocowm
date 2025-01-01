@@ -118,6 +118,10 @@ impl XdgShellHandler for PocoWM {
     fn unmaximize_request(&mut self, surface: ToplevelSurface) {
         self.xdg_unmaximize_request(&surface);
     }
+
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        self.xdg_minimize_request(&surface);
+    }
 }
 
 fn check_grab(
@@ -274,6 +278,14 @@ impl PocoWM {
             return;
         };
         window.state_mut().remove(WindowState::MAXIMIZED);
+        self.renderer.render(&self.layout);
+    }
+
+    pub fn xdg_minimize_request(&mut self, surface: &ToplevelSurface) {
+        let Some(window) = self.layout.get_window_from_surface(surface.wl_surface()) else {
+            return;
+        };
+        window.state_mut().insert(WindowState::MINIMIZED);
         self.renderer.render(&self.layout);
     }
 }

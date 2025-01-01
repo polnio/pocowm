@@ -140,6 +140,9 @@ impl PointerTarget<PocoWM> for Window {
             if loc.y < DECORATIONS_HEIGHT as f64 {
                 match decorations.get_button(loc) {
                     Some(decorations::Button::Close) => {
+                        if event.state != ButtonState::Pressed {
+                            return;
+                        }
                         self.toplevel().map(|t| t.send_close());
                     }
                     Some(decorations::Button::Maximize) => {
@@ -158,7 +161,14 @@ impl PointerTarget<PocoWM> for Window {
                         }
                     }
                     Some(decorations::Button::Minimize) => {
-                        // window.set_state(WindowState::Minimized);
+                        if event.state != ButtonState::Pressed {
+                            return;
+                        }
+                        if let Some(xdg) = self.toplevel().cloned() {
+                            data.loop_handle.insert_idle(move |data| {
+                                data.xdg_minimize_request(&xdg);
+                            });
+                        }
                     }
                     None => {
                         if let Some(xdg) = self.toplevel() {
