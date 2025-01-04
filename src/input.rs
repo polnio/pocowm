@@ -1,4 +1,5 @@
 use crate::layout::{LayoutElement, LayoutType};
+use crate::utils::Edge;
 use crate::window::Window;
 use crate::PocoWM;
 use bitflags::bitflags;
@@ -97,6 +98,49 @@ impl PocoWM {
                                             LayoutType::Tabbed => LayoutType::Horizontal,
                                         };
                                         state.renderer.render(&state.layout);
+                                    });
+                                return keyboard::FilterResult::Intercept(());
+                            }
+
+                            if syms.contains(&keyboard::Keysym::h) {
+                                keyboard
+                                    .current_focus()
+                                    .and_then(|w| state.layout.get_window_neighbor(&w, Edge::LEFT))
+                                    .cloned()
+                                    .map(|w| {
+                                        state.focus_window(Some(&w));
+                                    });
+                                return keyboard::FilterResult::Intercept(());
+                            }
+                            if syms.contains(&keyboard::Keysym::j) {
+                                keyboard
+                                    .current_focus()
+                                    .and_then(|w| {
+                                        state.layout.get_window_neighbor(&w, Edge::BOTTOM)
+                                    })
+                                    .cloned()
+                                    .map(|w| {
+                                        state.focus_window(Some(&w));
+                                    });
+                                return keyboard::FilterResult::Intercept(());
+                            }
+                            if syms.contains(&keyboard::Keysym::k) {
+                                keyboard
+                                    .current_focus()
+                                    .and_then(|w| state.layout.get_window_neighbor(&w, Edge::TOP))
+                                    .cloned()
+                                    .map(|w| {
+                                        state.focus_window(Some(&w));
+                                    });
+                                return keyboard::FilterResult::Intercept(());
+                            }
+                            if syms.contains(&keyboard::Keysym::l) {
+                                keyboard
+                                    .current_focus()
+                                    .and_then(|w| state.layout.get_window_neighbor(&w, Edge::RIGHT))
+                                    .cloned()
+                                    .map(|w| {
+                                        state.focus_window(Some(&w));
                                     });
                                 return keyboard::FilterResult::Intercept(());
                             }
@@ -225,6 +269,7 @@ impl PocoWM {
         if let Some(window) = window.as_ref() {
             self.layout.iter_windows().for_each(Window::unfocus);
             window.focus();
+            self.layout.on_focus(window);
         }
         self.seat.get_keyboard().map(|keyboard| {
             let serial = SERIAL_COUNTER.next_serial();

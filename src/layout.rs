@@ -1,4 +1,4 @@
-// use smithay::desktop::Window;
+use crate::utils::Edge;
 use crate::window::{Window, WindowState};
 use crate::PocoWM;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -20,6 +20,7 @@ pub enum LayoutElement {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Layout {
+    pub last_focused: usize,
     pub layout_type: LayoutType,
     pub elements: Vec<LayoutElement>,
 }
@@ -140,6 +141,66 @@ impl Layout {
                 removed
             }
         }
+    }
+
+    pub fn get_last_focused(&self) -> Option<&Window> {
+        self.elements.get(self.last_focused).and_then(|e| match e {
+            LayoutElement::Window(w) => Some(w),
+            LayoutElement::SubLayout(sl) => sl.get_last_focused(),
+        })
+    }
+
+    pub fn get_window_neighbor(&self, window: &Window, edge: Edge) -> Option<&Window> {
+        let pos = self.get_window_positions(window)?;
+        self.get_window_neighbor_rec(&pos, edge)
+    }
+    pub fn get_window_neighbor_rec(&self, pos: &[usize], edge: Edge) -> Option<&Window> {
+        let p = pos.first()?;
+        let el = self.elements.get(*p)?;
+        match el {
+            LayoutElement::SubLayout(sl) => {
+                if let Some(p) = pos.get(1..) {
+                    if let Some(w) = sl.get_window_neighbor_rec(p, edge) {
+                        return Some(w);
+                    }
+                };
+            }
+            _ => {}
+        };
+
+        let node = match (&self.layout_type, edge) {
+            (LayoutType::Horizontal, Edge::LEFT) => self.elements.get(p.saturating_sub(1))?,
+            (LayoutType::Horizontal, Edge::RIGHT) => self.elements.get(p.saturating_add(1))?,
+            (LayoutType::Vertical, Edge::TOP) => self.elements.get(p.saturating_sub(1))?,
+            (LayoutType::Vertical, Edge::BOTTOM) => self.elements.get(p.saturating_add(1))?,
+            _ => return None,
+        };
+        match node {
+            LayoutElement::Window(w) => Some(w),
+            LayoutElement::SubLayout(sl) => sl.get_last_focused(),
+        }
+    }
+
+    pub fn on_focus(&mut self, window: &Window) {
+        if let Some(i) = self.on_focus_rec(window) {
+            self.last_focused = i;
+        }
+    }
+
+    fn on_focus_rec(&mut self, window: &Window) -> Option<usize> {
+        let index = self
+            .elements
+            .iter_mut()
+            .enumerate()
+            .find_map(|(i, e)| match e {
+                LayoutElement::Window(w) if w == window => Some(i),
+                LayoutElement::Window(_) => None,
+                LayoutElement::SubLayout(sl) => sl.on_focus_rec(window),
+            });
+        if let Some(i) = index {
+            self.last_focused = i;
+        }
+        index
     }
 }
 
