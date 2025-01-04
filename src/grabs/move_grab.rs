@@ -1,5 +1,6 @@
-use crate::window::Window;
+use crate::window::{Window, WindowState};
 use crate::PocoWM;
+use smithay::desktop::space::SpaceElement;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent, GesturePinchBeginEvent,
     GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent, GestureSwipeEndEvent,
@@ -12,6 +13,32 @@ pub struct MoveGrab {
     pub start_data: GrabStartData<PocoWM>,
     pub window: Window,
     pub initial_window_location: Point<i32, Logical>,
+    pub new_location: Point<i32, Logical>,
+    pub pointer_location: Point<f64, Logical>,
+}
+
+impl MoveGrab {
+    pub fn unset_tiled(&mut self, data: &mut PocoWM) -> Option<()> {
+        let old_positions = data.layout.get_window_positions(&self.window)?;
+        let neighbor = data.renderer.elements().find(|e| {
+            if e == &&self.window {
+                return false;
+            }
+            let Some(loc) = data.renderer.element_location(e) else {
+                return false;
+            };
+            let mut rect = e.bbox();
+            rect.loc += loc;
+            rect.to_f64().contains(self.pointer_location)
+        })?;
+        let loc = data.renderer.element_location(neighbor)?;
+        let edge = neighbor.get_edge_under(self.pointer_location - loc.to_f64());
+        data.layout.remove_window(Some(&old_positions));
+        let new_positions = data.layout.get_window_positions(&neighbor)?;
+        data.layout
+            .add_window_neighbor(self.window.clone(), &new_positions, edge);
+        Some(())
+    }
 }
 
 impl PointerGrab<PocoWM> for MoveGrab {
@@ -25,9 +52,13 @@ impl PointerGrab<PocoWM> for MoveGrab {
         handle.motion(data, None, event);
         let delta = event.location - self.start_data.location;
         let new_location = (self.initial_window_location.to_f64() + delta).to_i32_round();
-        self.window.floating_rect_mut().loc = new_location;
+        if self.window.state().contains(WindowState::FLOATING) {
+            self.window.floating_rect_mut().loc = new_location;
+        }
         data.renderer
             .map_element(self.window.clone(), new_location, true);
+        self.new_location = new_location;
+        self.pointer_location = event.location;
     }
 
     fn relative_motion(
@@ -145,5 +176,11 @@ impl PointerGrab<PocoWM> for MoveGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut PocoWM) {}
+    fn unset(&mut self, data: &mut PocoWM) {
+        let is_floating = self.window.state().contains(WindowState::FLOATING);
+        if !is_floating {
+            self.unset_tiled(data);
+        }
+        data.renderer.render(&data.layout);
+    }
 }

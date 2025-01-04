@@ -86,19 +86,7 @@ impl PointerTarget<PocoWM> for Window {
                     if let Some(surface) = self.toplevel().cloned() {
                         let seat = seat.clone();
                         let serial = event.serial;
-                        let mut edges = Edge::empty();
-                        if loc.x < self.geometry().size.w as f64 / 2.0 {
-                            edges |= Edge::LEFT;
-                        }
-                        if loc.y < self.geometry().size.h as f64 / 2.0 {
-                            edges |= Edge::TOP;
-                        }
-                        if loc.x > self.geometry().size.w as f64 / 2.0 {
-                            edges |= Edge::RIGHT;
-                        }
-                        if loc.y > self.geometry().size.h as f64 / 2.0 {
-                            edges |= Edge::BOTTOM;
-                        }
+                        let edges = self.get_edge_under(loc);
                         data.loop_handle.insert_idle(move |state| {
                             state.xdg_resize_request(&surface, &seat, serial, edges);
                         });

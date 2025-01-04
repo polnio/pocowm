@@ -181,6 +181,46 @@ impl Layout {
         }
     }
 
+    pub fn add_window_neighbor(
+        &mut self,
+        new_window: Window,
+        pos: &[usize],
+        edge: Edge,
+    ) -> Option<()> {
+        let p = pos.first()?;
+        let el = self.elements.get_mut(*p)?;
+        match el {
+            LayoutElement::SubLayout(sl) => {
+                if let Some(p) = pos.get(1..) {
+                    if sl
+                        .add_window_neighbor(new_window.clone(), p, edge)
+                        .is_some()
+                    {
+                        return Some(());
+                    }
+                };
+            }
+            _ => {}
+        };
+
+        let edge = match &self.layout_type {
+            LayoutType::Horizontal => edge.intersection(Edge::LEFT | Edge::RIGHT),
+            LayoutType::Vertical => edge.intersection(Edge::TOP | Edge::BOTTOM),
+            LayoutType::Tabbed => edge,
+        };
+
+        let index = match (&self.layout_type, edge) {
+            (LayoutType::Horizontal, Edge::LEFT) => *p,
+            (LayoutType::Horizontal, Edge::RIGHT) => p.saturating_add(1),
+            (LayoutType::Vertical, Edge::TOP) => *p,
+            (LayoutType::Vertical, Edge::BOTTOM) => p.saturating_add(1),
+            _ => return None,
+        };
+        self.elements
+            .insert(index, LayoutElement::Window(new_window));
+        Some(())
+    }
+
     pub fn on_focus(&mut self, window: &Window) {
         if let Some(i) = self.on_focus_rec(window) {
             self.last_focused = i;

@@ -199,9 +199,9 @@ impl PocoWM {
         let Some(window) = self.layout.get_window_from_surface(&wl_surface) else {
             return;
         };
-        if *window.state() != WindowState::FLOATING {
-            return;
-        }
+        // if *window.state() != WindowState::FLOATING {
+        //     return;
+        // }
         let Some(initial_window_location) = self.renderer.element_location(window) else {
             return;
         };
@@ -210,6 +210,8 @@ impl PocoWM {
             start_data,
             window: window.clone(),
             initial_window_location,
+            new_location: initial_window_location,
+            pointer_location: pointer.current_location(),
         };
 
         pointer.set_grab(self, grab, serial, Focus::Clear)

@@ -14,6 +14,8 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use smithay::wayland::shell::xdg::ToplevelSurface;
 use std::cell::{Ref, RefCell, RefMut};
 
+use crate::utils::Edge;
+
 /* #[derive(Debug, Clone, Default, PartialEq, Eq, IsVariant)]
 pub enum WindowState {
     #[default]
@@ -168,6 +170,23 @@ impl Window {
     pub fn unfocus(&self) {
         self.set_activated(false);
         *self.get_is_focused_mut() = false;
+    }
+
+    pub fn get_edge_under(&self, location: Point<f64, Logical>) -> Edge {
+        let mut edges = Edge::empty();
+        if location.x < self.geometry().size.w as f64 / 2.0 {
+            edges |= Edge::LEFT;
+        }
+        if location.y < self.geometry().size.h as f64 / 2.0 {
+            edges |= Edge::TOP;
+        }
+        if location.x > self.geometry().size.w as f64 / 2.0 {
+            edges |= Edge::RIGHT;
+        }
+        if location.y > self.geometry().size.h as f64 / 2.0 {
+            edges |= Edge::BOTTOM;
+        }
+        edges
     }
 
     generate_getter!(pub state: WindowState);
