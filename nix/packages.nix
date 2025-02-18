@@ -4,12 +4,12 @@
 
   # Tools
   lib,
+  clippy,
   pkg-config,
   pkgs,
 
   # Dependencies
   cairo,
-  clippy,
   dbus,
   egl-wayland,
   libGL,
@@ -44,6 +44,5 @@ craneLib.buildPackage rec {
     seatd
     wayland
   ];
-  # RUST_SRC_PATH = rustPlatform.rustLibSrc;
   LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
 }

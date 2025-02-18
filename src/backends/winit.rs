@@ -65,8 +65,7 @@ impl PocoWM {
                             state.handle_input(event);
                         }
                         WinitEvent::Redraw => {
-                            let damage =
-                                Rectangle::from_loc_and_size((0, 0), backend.window_size());
+                            let damage = Rectangle::from_size(backend.window_size());
                             backend.bind().context("Failed to bind winit")?;
                             render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
                                 &output,

@@ -31,9 +31,9 @@ impl XdgShellHandler for PocoWM {
             .next()
             .and_then(|o| self.renderer.output_geometry(o))
             .unwrap_or_default();
-        *window.floating_rect_mut() = Rectangle::from_loc_and_size(
-            (output_geo.size.w / 4, output_geo.size.h / 4),
-            (output_geo.size.w / 2, output_geo.size.h / 2),
+        *window.floating_rect_mut() = Rectangle::new(
+            (output_geo.size.w / 4, output_geo.size.h / 4).into(),
+            (output_geo.size.w / 2, output_geo.size.h / 2).into(),
         );
         let mut positions = self
             .seat
@@ -246,8 +246,7 @@ impl PocoWM {
         });
         surface.send_pending_configure();
 
-        let initial_window_rect =
-            Rectangle::from_loc_and_size(initial_window_location, initial_window_size);
+        let initial_window_rect = Rectangle::new(initial_window_location, initial_window_size);
 
         ResizeState::with(surface.wl_surface(), |state| {
             *state = ResizeState::Resizing {

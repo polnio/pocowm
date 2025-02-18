@@ -3,30 +3,28 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     crane.url = "github:ipetkov/crane";
+    flake-parts = {
+      url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    {
-      nixpkgs,
+    inputs@{
       crane,
-      self,
+      flake-parts,
+      ...
     }:
-    let
+    flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
         "x86_64-linux"
         "aarch64-linux"
       ];
-      forAllSystems = config: nixpkgs.lib.genAttrs systems config;
-    in
-    {
-      packages = forAllSystems (
-        system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-        in
+      perSystem =
+        { system, pkgs, ... }:
         {
-          default = pkgs.callPackage ./nix/packages.nix { inherit crane; };
-        }
-      );
+          packages.default = pkgs.callPackage ./nix/packages.nix { inherit crane; };
+          devShells.default = pkgs.callPackage ./nix/shell.nix { inherit crane; };
+        };
     };
 }
