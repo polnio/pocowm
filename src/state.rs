@@ -68,7 +68,7 @@ impl PocoWM {
 
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "winit");
         let socket_name = socket.socket_name().to_owned();
-        let layout = Layout::default();
+        let layout = Layout::new();
         // let floating_windows = Vec::new();
         // let layout_manager = LayoutManager::new();
         let renderer = Renderer::default();

@@ -25,3 +25,17 @@ impl From<xdg_toplevel::ResizeEdge> for Edge {
         }
     }
 }
+impl Edge {
+    pub fn get_vertical(&self) -> Edge {
+        self.intersection(Self::TOP | Self::BOTTOM)
+    }
+    pub fn get_horizontal(&self) -> Edge {
+        self.intersection(Self::LEFT | Self::RIGHT)
+    }
+    pub fn is_horizontal(&self) -> bool {
+        !self.get_horizontal().is_empty()
+    }
+    pub fn is_vertical(&self) -> bool {
+        !self.get_vertical().is_empty()
+    }
+}

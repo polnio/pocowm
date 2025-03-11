@@ -1,4 +1,4 @@
-use crate::layout::{LayoutElement, LayoutType};
+use crate::layout::{Id, LayoutType};
 use crate::utils::Edge;
 use crate::window::Window;
 use crate::PocoWM;
@@ -81,67 +81,55 @@ impl PocoWM {
                                 keyboard
                                     .current_focus()
                                     .and_then(|w| if w.state().is_empty() { Some(w) } else { None })
-                                    .and_then(|w| state.layout.get_window_positions(&w))
-                                    .map(|positions| {
-                                        let mut layout = &mut state.layout;
-                                        for pos in positions {
-                                            match layout.elements.get_mut(pos) {
-                                                Some(LayoutElement::SubLayout(sl)) => {
-                                                    layout = sl;
-                                                }
-                                                _ => break,
-                                            }
-                                        }
+                                    .and_then(|w| state.layout.get_window_id(&w))
+                                    .and_then(|id| state.layout.get_parent(id))
+                                    .and_then(|id| state.layout.get_element_mut(id))
+                                    .and_then(|e| e.get_sublayout_mut())
+                                    .map(|layout| {
                                         layout.layout_type = match layout.layout_type {
                                             LayoutType::Horizontal => LayoutType::Vertical,
                                             LayoutType::Vertical => LayoutType::Horizontal,
                                             LayoutType::Tabbed => LayoutType::Horizontal,
                                         };
-                                        state.renderer.render(&state.layout);
                                     });
+                                state.renderer.render(&state.layout);
                                 return keyboard::FilterResult::Intercept(());
                             }
 
                             if syms.contains(&keyboard::Keysym::h) {
                                 keyboard
                                     .current_focus()
-                                    .and_then(|w| state.layout.get_window_neighbor(&w, Edge::LEFT))
-                                    .cloned()
-                                    .map(|w| {
-                                        state.focus_window(Some(&w));
-                                    });
+                                    .and_then(|w| state.layout.get_window_id(&w))
+                                    .and_then(|id| state.layout.get_window_neighbor(id, Edge::LEFT))
+                                    .map(|id| state.focus_window(Some(id)));
                                 return keyboard::FilterResult::Intercept(());
                             }
                             if syms.contains(&keyboard::Keysym::j) {
                                 keyboard
                                     .current_focus()
-                                    .and_then(|w| {
-                                        state.layout.get_window_neighbor(&w, Edge::BOTTOM)
+                                    .and_then(|w| state.layout.get_window_id(&w))
+                                    .and_then(|id| {
+                                        state.layout.get_window_neighbor(id, Edge::BOTTOM)
                                     })
-                                    .cloned()
-                                    .map(|w| {
-                                        state.focus_window(Some(&w));
-                                    });
+                                    .map(|id| state.focus_window(Some(id)));
                                 return keyboard::FilterResult::Intercept(());
                             }
                             if syms.contains(&keyboard::Keysym::k) {
                                 keyboard
                                     .current_focus()
-                                    .and_then(|w| state.layout.get_window_neighbor(&w, Edge::TOP))
-                                    .cloned()
-                                    .map(|w| {
-                                        state.focus_window(Some(&w));
-                                    });
+                                    .and_then(|w| state.layout.get_window_id(&w))
+                                    .and_then(|id| state.layout.get_window_neighbor(id, Edge::TOP))
+                                    .map(|id| state.focus_window(Some(id)));
                                 return keyboard::FilterResult::Intercept(());
                             }
                             if syms.contains(&keyboard::Keysym::l) {
                                 keyboard
                                     .current_focus()
-                                    .and_then(|w| state.layout.get_window_neighbor(&w, Edge::RIGHT))
-                                    .cloned()
-                                    .map(|w| {
-                                        state.focus_window(Some(&w));
-                                    });
+                                    .and_then(|w| state.layout.get_window_id(&w))
+                                    .and_then(|id| {
+                                        state.layout.get_window_neighbor(id, Edge::RIGHT)
+                                    })
+                                    .map(|id| state.focus_window(Some(id)));
                                 return keyboard::FilterResult::Intercept(());
                             }
 
@@ -176,7 +164,7 @@ impl PocoWM {
                     Option::zip(pointed_window, focused_window).map(
                         |(pointed_window, focused_window)| {
                             if pointed_window != focused_window {
-                                self.focus_window(Some(&pointed_window));
+                                self.focus_window(self.layout.get_window_id(&pointed_window));
                             }
                         },
                     );
@@ -210,7 +198,7 @@ impl PocoWM {
                     ButtonState::Pressed => {
                         let (window, _location) =
                             self.renderer.element_under(pointer.current_location())?;
-                        self.focus_window(Some(&window.clone()));
+                        self.focus_window(self.layout.get_window_id(window));
                         self.renderer.elements().for_each(|window| {
                             window.toplevel().map(|t| t.send_pending_configure());
                         });
@@ -265,15 +253,15 @@ impl PocoWM {
         frame
     }
 
-    pub fn focus_window(&mut self, window: Option<&Window>) {
-        if let Some(window) = window.as_ref() {
-            self.layout.iter_windows().for_each(Window::unfocus);
-            window.focus();
-            self.layout.on_focus(window);
-        }
+    pub fn focus_window(&mut self, id: Option<Id>) {
+        self.layout.iter_windows().for_each(Window::unfocus);
+        id.map(|id| self.layout.on_focus(id));
+        let window = id.and_then(|id| self.layout.get_window(id));
+        window.map(Window::focus);
+        let window = window.cloned();
         self.seat.get_keyboard().map(|keyboard| {
             let serial = SERIAL_COUNTER.next_serial();
-            keyboard.set_focus(self, window.cloned(), serial);
+            keyboard.set_focus(self, window, serial);
         });
     }
 }

@@ -19,7 +19,6 @@ pub struct MoveGrab {
 
 impl MoveGrab {
     pub fn unset_tiled(&mut self, data: &mut PocoWM) -> Option<()> {
-        let old_positions = data.layout.get_window_positions(&self.window)?;
         let neighbor = data.renderer.elements().find(|e| {
             if e == &&self.window {
                 return false;
@@ -33,10 +32,10 @@ impl MoveGrab {
         })?;
         let loc = data.renderer.element_location(neighbor)?;
         let edge = neighbor.get_edge_under(self.pointer_location - loc.to_f64());
-        data.layout.remove_window(Some(&old_positions));
-        let new_positions = data.layout.get_window_positions(&neighbor)?;
-        data.layout
-            .add_window_neighbor(self.window.clone(), &new_positions, edge);
+        let old_id = data.layout.get_window_id(&self.window)?;
+        let new_id = data.layout.get_window_id(neighbor)?;
+        let el = data.layout.remove_element(old_id)?;
+        data.layout.insert_element_at(new_id, edge, el);
         Some(())
     }
 }

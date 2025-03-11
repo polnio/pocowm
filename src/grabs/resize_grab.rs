@@ -255,7 +255,7 @@ impl PointerGrab<PocoWM> for ResizeGrab {
 
 /// Should be called on `WlSurface::commit`
 pub(crate) fn handle_commit(state: &mut PocoWM, surface: &WlSurface) -> Option<()> {
-    let window = state.layout.get_mut_window_from_surface(surface)?;
+    let window = state.layout.get_window_from_surface(surface)?;
     if !window.state().contains(WindowState::FLOATING) {
         return None;
     }

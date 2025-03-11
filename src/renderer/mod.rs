@@ -1,5 +1,5 @@
 // https://danyspin97.org/talks/writing-a-wayland-wallpaper-daemon-in-rust/#47
-use crate::layout::{Layout, LayoutElement, LayoutType};
+use crate::layout::{Layout, LayoutElement, LayoutType, SubLayout};
 use crate::window::{Window, WindowState};
 use smithay::desktop::Space;
 use smithay::utils::{Logical, Rectangle};
@@ -21,7 +21,7 @@ impl Renderer {
         rect.loc.y += GAP;
         rect.size.w -= GAP * 2;
         rect.size.h -= GAP * 2;
-        self.render_rec(&layout, rect)?;
+        self.render_rec(&layout, layout.root(), rect)?;
         layout.iter_windows().for_each(|window| {
             if window.state().contains(WindowState::MINIMIZED) {
                 self.unmap_elem(window);
@@ -34,16 +34,23 @@ impl Renderer {
         Some(())
     }
 
-    fn render_rec(&mut self, layout: &Layout, rect: Rectangle<i32, Logical>) -> Option<()> {
-        let elements = layout.elements.iter().filter(|e| match e {
-            LayoutElement::Window(w) => w.state().is_empty(),
-            _ => true,
-        });
+    fn render_rec(
+        &mut self,
+        layout: &Layout,
+        sl: &SubLayout,
+        rect: Rectangle<i32, Logical>,
+    ) -> Option<()> {
+        let elements = sl
+            .children
+            .iter()
+            .copied()
+            .filter_map(|id| layout.get_element(id))
+            .filter(|el| el.get_window().is_none_or(|w| w.state().is_empty()));
         let elements_count = elements.clone().count() as i32;
         elements.enumerate().try_for_each(|(i, element)| {
             let i = i as i32;
             let mut rect = rect.clone();
-            match layout.layout_type {
+            match sl.layout_type {
                 LayoutType::Horizontal => {
                     rect.size.w = (rect.size.w - GAP * (elements_count - 1)) / elements_count;
                     // rect.size.w = (rect.size.w + GAP) / elements_count - GAP;
@@ -59,7 +66,7 @@ impl Renderer {
 
             match element {
                 LayoutElement::Window(window) => self.render_window(window, rect),
-                LayoutElement::SubLayout(layout) => self.render_rec(layout, rect),
+                LayoutElement::SubLayout(sl) => self.render_rec(layout, sl, rect),
             }
         });
 

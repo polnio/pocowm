@@ -1,4 +1,5 @@
 use crate::grabs::{MoveGrab, ResizeGrab, ResizeState};
+use crate::layout::{Id, Layout, LayoutElement};
 use crate::utils::Edge;
 use crate::window::{Window, WindowState};
 use crate::PocoWM;
@@ -18,6 +19,23 @@ use smithay::wayland::shell::xdg::{
     XdgToplevelSurfaceData,
 };
 
+fn get_next_focus_id(layout: &Layout, id: Id, before: bool) -> Option<Id> {
+    let element = layout.get_element(id)?;
+    match element {
+        LayoutElement::Window(w) if !before => Some(w.id),
+        LayoutElement::Window(w) => get_next_focus_id(layout, w.parent, true),
+        LayoutElement::SubLayout(sl) => {
+            let index = match (sl.last_focused, before) {
+                (0, _) => 1,
+                (i, true) => i - 1,
+                (i, false) => i,
+            };
+            let el = sl.children.get(index).or(sl.parent.as_ref())?;
+            get_next_focus_id(layout, *el, false)
+        }
+    }
+}
+
 impl XdgShellHandler for PocoWM {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
@@ -35,35 +53,32 @@ impl XdgShellHandler for PocoWM {
             (output_geo.size.w / 4, output_geo.size.h / 4).into(),
             (output_geo.size.w / 2, output_geo.size.h / 2).into(),
         );
-        let mut positions = self
+        let id = self
             .seat
             .get_keyboard()
             .and_then(|k| k.current_focus())
-            .and_then(|w| self.layout.get_window_positions(&w));
-        positions
-            .as_mut()
-            .and_then(|p| p.last_mut())
-            .map(|p| *p += 1);
-        self.layout.add_window(window.clone(), positions.as_deref());
-        self.renderer.map_element(window.clone(), (0, 0), false);
+            .and_then(|w| self.layout.get_window_id(&w))
+            .unwrap_or_default();
+        let Some(new_id) = self.layout.insert_window(id, window.clone()) else {
+            return;
+        };
+        // self.renderer.map_element(window.clone(), (0, 0), false);
         self.renderer.render(&self.layout);
-        self.focus_window(Some(&window));
+        self.focus_window(Some(new_id));
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        let window = self.layout.get_window_from_surface(surface.wl_surface());
-        window.map(|w| self.renderer.unmap_elem(w));
-        let mut positions = window.and_then(|w| self.layout.get_window_positions(w));
-        self.layout.remove_window(positions.as_deref());
+        let window = self
+            .layout
+            .get_window_from_surface(surface.wl_surface())
+            .unwrap();
+        self.renderer.unmap_elem(window);
+        let id = self.layout.get_window_id(window).unwrap();
+        let focus_id = get_next_focus_id(&self.layout, id, true);
+        self.layout.remove_element(id);
         self.renderer.render(&self.layout);
-        positions
-            .as_mut()
-            .and_then(|p| p.last_mut())
-            .map(|p| *p = p.saturating_sub(1));
-        positions
-            .and_then(|p| self.layout.get_window(&p))
-            .cloned()
-            .map(|w| self.focus_window(Some(&w)));
+
+        self.focus_window(focus_id);
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -71,7 +86,7 @@ impl XdgShellHandler for PocoWM {
         let _ = self.popups.track_popup(PopupKind::Xdg(surface));
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seatt: WlSeat, _serial: Serial) {
+    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
         // TODO: Implement popups grab
     }
 
