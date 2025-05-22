@@ -30,8 +30,13 @@ fn get_next_focus_id(layout: &Layout, id: Id, before: bool) -> Option<Id> {
                 (i, true) => i - 1,
                 (i, false) => i,
             };
-            let el = sl.children.get(index).or(sl.parent.as_ref())?;
-            get_next_focus_id(layout, *el, false)
+            if let Some(el) = sl.children.get(index) {
+                get_next_focus_id(layout, *el, false)
+            } else if let Some(p) = sl.parent {
+                get_next_focus_id(layout, p, true)
+            } else {
+                None
+            }
         }
     }
 }

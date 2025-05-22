@@ -149,10 +149,18 @@ impl Layout {
     }
     #[inline]
     pub fn remove_element(&mut self, id: Id) -> Option<LayoutElement> {
-        self.get_parent(id)
+        let (parent, is_empty) = self
+            .get_parent(id)
             .and_then(|p| self.get_sublayout_mut(p))
-            .map(|sl| sl.children.retain(|i| i != &id));
-        self.elements.remove(&id)
+            .map(|parent| {
+                parent.children.retain(|i| i != &id);
+                (parent.id, parent.children.is_empty())
+            })?;
+        let el = self.elements.remove(&id)?;
+        if is_empty {
+            self.remove_element(parent);
+        }
+        Some(el)
     }
     #[inline]
     pub fn get_element(&self, id: Id) -> Option<&LayoutElement> {
@@ -255,24 +263,27 @@ impl Layout {
         })
     }
     fn is_correct_layout_type(&self, layout_type: LayoutType, edge: Edge) -> bool {
-        match (layout_type, edge.is_horizontal(), edge.is_vertical()) {
-            (LayoutType::Horizontal, true, _) => true,
-            (LayoutType::Vertical, _, true) => true,
-            _ => false,
-        }
+        return (layout_type == LayoutType::Horizontal && edge.is_horizontal())
+            || (layout_type == LayoutType::Vertical && edge.is_vertical());
     }
     pub fn get_window_neighbor(&self, id: Id, edge: Edge) -> Option<Id> {
         let mut sl = self.get_parent(id).and_then(|id| self.get_sublayout(id))?;
+        let mut child_id = id;
         while !self.is_correct_layout_type(sl.layout_type, edge) {
-            sl = self.get_parent(id).and_then(|id| self.get_sublayout(id))?;
+            child_id = sl.id;
+            sl = sl.parent.and_then(|id| self.get_sublayout(id))?;
         }
-        let index = sl.children.iter().position(|e| e == &sl.id)?;
+        let index = sl.children.iter().position(|e| e == &child_id)?;
         let new_index = match edge {
-            Edge::TOP | Edge::LEFT => index - 1,
+            Edge::TOP | Edge::LEFT => index.saturating_sub(1),
             Edge::BOTTOM | Edge::RIGHT => index + 1,
             _ => return None,
         };
-        sl.children.get(new_index).copied()
+        let mut id = sl.children.get(new_index).copied()?;
+        while let Some(sl) = self.get_sublayout(id) {
+            id = sl.children.get(sl.last_focused).copied()?;
+        }
+        Some(id)
     }
     pub fn on_focus(&mut self, id: Id) {
         let Some(parent) = self.get_parent(id) else {
